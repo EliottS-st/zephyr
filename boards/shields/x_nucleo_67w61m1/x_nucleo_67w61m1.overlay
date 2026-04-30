@@ -1,0 +1,14 @@
+&arduino_spi {
+	status = "okay";
+	cs-gpios = <&arduino_header ARDUINO_HEADER_R3_D10 GPIO_ACTIVE_HIGH>;
+
+	st67w611m1: st67w611m1@0 {
+		status = "okay";
+		compatible = "st,st67w611m1";
+		reg = <0>;
+		spi-max-frequency = <40000000>;
+		ready-gpios = <&arduino_header ARDUINO_HEADER_R3_D3 GPIO_ACTIVE_HIGH>;
+		chipen-gpios = <&arduino_header ARDUINO_HEADER_R3_D5 GPIO_ACTIVE_HIGH>;
+		boot-gpios = <&arduino_header ARDUINO_HEADER_R3_D6 GPIO_ACTIVE_HIGH>;
+	};
+};

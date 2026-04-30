@@ -1,0 +1,28 @@
+# Copyright (c) 2026 STMicroelectronics
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig ST67W611M1
+	bool "ST67W611M1 base"
+	default y
+	depends on DT_HAS_ST_ST67W611M1_ENABLED
+	select MODEM
+	select MODEM_CONTEXT
+	select MODEM_CMD_HANDLER
+
+if ST67W611M1
+
+config WIFI_ST67W611M1
+	bool "ST67W611M1 Wi-Fi driver"
+	default y
+	select NET_L2_ETHERNET # Wifi driver is defined as an Ethernet interface
+	select WIFI_USE_NATIVE_NETWORKING # Sets net_wifi_mgmt_offload as an ethernet_api
+
+config ST67W611M1_WORKQ_THREAD_PRIORITY
+	int "Priority of the work queue thread"
+	default 7
+
+config ST67W611M1_WORKQ_STACK_SIZE
+	int "Stack size of the driver work queue"
+	default 1024
+
+endif # ST67W611M1
