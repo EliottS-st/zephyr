@@ -33,6 +33,8 @@ LOG_MODULE_REGISTER(i2c_ll_stm32_v2);
 #include "i2c_stm32.h"
 #include "i2c-priv.h"
 
+BUILD_ASSERT_INVALID_I2C_TRANSFER_TIMEOUT();
+
 #if CONFIG_STM32_HAL2
 #define STM32_I2C_CONVERT_TIMINGS(prescaler, setup_time, hold_time, sclh_period, scll_period) \
 	LL_I2C_CONVERT_TIMINGS(prescaler, setup_time, hold_time, sclh_period, scll_period)
@@ -131,6 +133,7 @@ static uint32_t i2c_valid_timing_nbr;
 
 #define I2C_STM32_WAIT_POLL_SLEEP_USEC 10U
 
+#if defined(CONFIG_I2C_TARGET)
 static inline int wait_bus_idle(const struct device *dev, uint32_t timeout_us)
 {
 	const struct i2c_stm32_config *cfg = dev->config;
@@ -150,6 +153,7 @@ static inline int wait_bus_idle(const struct device *dev, uint32_t timeout_us)
 
 	return 0;
 }
+#endif /* CONFIG_I2C_TARGET */
 
 #ifdef CONFIG_I2C_STM32_V2_DMA
 static int configure_dma(struct stream const *dma, struct dma_config *dma_cfg,
@@ -758,14 +762,14 @@ int i2c_stm32_error(const struct device *dev)
 	 */
 	if (LL_I2C_IsActiveFlag_BERR(i2c)) {
 		LL_I2C_ClearFlag_BERR(i2c);
-		data->current.is_err = 1U;
 #if defined(CONFIG_I2C_TARGET)
-		if (error_cb != NULL) {
-			error_cb(data->target_cfg, I2C_ERROR_GENERIC);
+		if (!data->controller_active) {
+			if (error_cb != NULL) {
+				error_cb(data->target_cfg, I2C_ERROR_GENERIC);
+			}
 			goto end;
 		}
 #endif
-		return 0;
 	}
 
 #if defined(CONFIG_SMBUS_STM32_SMBALERT)
@@ -800,7 +804,7 @@ static int stm32_i2c_irq_msg_finish(const struct device *dev, struct i2c_msg *ms
 	int ret;
 
 	/* Wait for IRQ to complete or timeout */
-	ret = k_sem_take(&data->device_sync_sem, K_MSEC(CONFIG_I2C_STM32_TRANSFER_TIMEOUT_MSEC));
+	ret = k_sem_take(&data->device_sync_sem, K_MSEC(CONFIG_I2C_TRANSFER_TIMEOUT_MS));
 
 #ifdef CONFIG_I2C_STM32_V2_DMA
 	/* Stop DMA and invalidate cache if needed */
@@ -1128,7 +1132,7 @@ static inline int msg_done(const struct device *dev,
 			return -EIO;
 		}
 		if ((k_uptime_get() - start_time) >
-		    CONFIG_I2C_STM32_TRANSFER_TIMEOUT_MSEC) {
+		    CONFIG_I2C_TRANSFER_TIMEOUT_MS) {
 			return -ETIMEDOUT;
 		}
 	}
@@ -1137,7 +1141,7 @@ static inline int msg_done(const struct device *dev,
 		LL_I2C_GenerateStopCondition(i2c);
 		while (!LL_I2C_IsActiveFlag_STOP(i2c)) {
 			if ((k_uptime_get() - start_time) >
-			    CONFIG_I2C_STM32_TRANSFER_TIMEOUT_MSEC) {
+			    CONFIG_I2C_TRANSFER_TIMEOUT_MS) {
 				return -ETIMEDOUT;
 			}
 		}
@@ -1172,7 +1176,7 @@ static int i2c_stm32_msg_write(const struct device *dev, struct i2c_msg *msg,
 			}
 
 			if ((k_uptime_get() - start_time) >
-			    CONFIG_I2C_STM32_TRANSFER_TIMEOUT_MSEC) {
+			    CONFIG_I2C_TRANSFER_TIMEOUT_MS) {
 				return -ETIMEDOUT;
 			}
 		}
@@ -1203,7 +1207,7 @@ static int i2c_stm32_msg_read(const struct device *dev, struct i2c_msg *msg,
 				return -EIO;
 			}
 			if ((k_uptime_get() - start_time) >
-			    CONFIG_I2C_STM32_TRANSFER_TIMEOUT_MSEC) {
+			    CONFIG_I2C_TRANSFER_TIMEOUT_MS) {
 				return -ETIMEDOUT;
 			}
 		}

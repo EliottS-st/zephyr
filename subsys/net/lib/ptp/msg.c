@@ -22,7 +22,7 @@ LOG_MODULE_REGISTER(ptp_msg, CONFIG_PTP_LOG_LEVEL);
 
 static struct k_mem_slab msg_slab;
 
-K_MEM_SLAB_DEFINE_STATIC(msg_slab, sizeof(struct ptp_msg), CONFIG_PTP_MSG_POLL_SIZE, 4);
+K_MEM_SLAB_DEFINE_STATIC_TYPE(msg_slab, struct ptp_msg, CONFIG_PTP_MSG_POLL_SIZE);
 
 static const char *msg_type_str(struct ptp_msg *msg)
 {
@@ -465,6 +465,9 @@ int ptp_msg_post_recv(struct ptp_port *port, struct ptp_msg *msg, int cnt)
 		LOG_ERR("Received message incomplient with supported PTP version");
 		return -EBADMSG;
 	}
+
+	/* Record local uptime for aging calculations */
+	msg->local_uptime_ms = k_uptime_get();
 
 	LOG_DBG("Port %d received %s message", port->port_ds.id.port_number, msg_type_str(msg));
 

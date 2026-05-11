@@ -29,11 +29,28 @@ Build System
 Kernel
 ******
 
+* ``_k_neg_eagain`` has been renamed to ``_errno_neg_egain`` as ``errno`` has been migrated out of
+  kernel into ``lib/libc/common``.
+
 Boards
 ******
 
+* The Kconfig options :kconfig:option:`CONFIG_SRAM_SIZE` and
+  :kconfig:option:`CONFIG_SRAM_BASE_ADDRESS` have been deprecated, boards should instead use the
+  devicetree ``zephyr.sram`` chosen node to specify the RAM node which will be used (whose values
+  populated the Kconfig values). If either option is manually adjusted, it will cause
+  :kconfig:option:`CONFIG_SRAM_DEPRECATED_KCONFIG_SET` to be set which indicates this deprecation.
+
 Device Drivers and Devicetree
 *****************************
+
+Haptics
+=======
+
+* The ``cirrus,cs40l5x`` compatible has been replaced by variant-specific compatibles
+  :dtcompatible:`cirrus,cs40l50`, :dtcompatible:`cirrus,cs40l51`, :dtcompatible:`cirrus,cs40l52`,
+  and :dtcompatible:`cirrus,cs40l53`. Applications using the old compatible must update their
+  devicetree nodes accordingly.
 
 .. Group contents in this section by subsystem, e.g.:
 ..
@@ -63,6 +80,21 @@ Digital Microphone
   have been updated. Application code using :c:func:`dmic_configure`, :c:func:`dmic_trigger`, and
   :c:func:`dmic_read` is not impacted.
 
+Ethernet
+========
+
+* ``ETHERNET_CONFIG_TYPE_T1S_PARAM`` and the related ``NET_REQUEST_ETHERNET_SET_T1S_PARAM`` has
+  been removed. :c:func:`phy_set_plca_cfg` together with :c:func:`net_eth_get_phy` should be
+  used instead to set these parameters (:github:`108136`).
+
+* In the functions implemented by the :c:struct:`ethernet_api` a additional argument was added for
+  a pointer to :c:struct:`net_if`. This api is not directly exposed to the application, so only
+  out-of-tree drivers need to be updated. (:github:`106086`)
+
+* The ``pinctrl-0`` and ``pinctrl-names`` devicetree properties for the
+  :dtcompatible:`nxp,enet-mac` need to be moved from the MAC node to the parent Ethernet controller
+  node. (:github:`107352`)
+
 Flash
 =====
 * :dtcompatible:`jedec,spi-nand` now requires a ``plane-bytes`` property, which indicates the size
@@ -81,12 +113,67 @@ GPIO
 
 * On STM32F1 series, GPIO output pins now use 50 MHz max. speed instead of 10 MHz. (:github:`104690`)
 
+NXP
+===
+
+* :kconfig:option:`CONFIG_MCUX_LPTMR_TIMER` no longer defaults to ``y`` based on the
+  ``/chosen/zephyr,system-timer`` chosen node being compatible with
+  :dtcompatible:`nxp,lptmr`. Out-of-tree SoCs and boards that rely on the LPTMR
+  as the system timer must now explicitly default the symbol in their
+  ``Kconfig.defconfig`` (for example ``default y if PM``).
+
+* Kinetis KE1xF no longer requires a board overlay to designate the system
+  timer when :kconfig:option:`CONFIG_PM` is enabled. The SoC DTSI now sets the
+  ``zephyr,system-timer`` chosen property, so boards that added the overlay
+  described in the Zephyr 4.4 migration guide can remove it.
+
+SD Host Controller
+==================
+
+* Renamed the Kconfig option ``CONFIG_SDHC_STM32_POLLING_SUPPORT`` to
+  :kconfig:option:`CONFIG_SDHC_STM32_DMA_MODE`. The new symbol enables DMA
+  (default ``y``); set it to ``n`` to use polling mode. (:github:`101617`)
+
+* Renamed the Kconfig option ``CONFIG_SDHC_STM32_SDIO`` to
+  :kconfig:option:`CONFIG_SDHC_STM32_SDMMC`. (:github:`101617`)
+
+* The devicetree compatible ``st,stm32-sdio`` was renamed. Use
+  :dtcompatible:`st,stm32-sdmmc` instead. With this compatible, the legacy
+  disk driver and the SDHC driver can target the same node. To migrate to the
+  SDHC STM32 SDMMC driver, disable the legacy disk driver:
+
+  .. code-block:: kconfig
+
+     CONFIG_SDMMC_STM32=n
+
+  (:github:`101617`)
+
+* For :dtcompatible:`st,stm32-sdmmc`, the ``sdhi-on-gpios`` property has been
+  consolidated into the existing ``pwr-gpios`` property. Replace
+  ``sdhi-on-gpios`` with ``pwr-gpios`` in out-of-tree devicetree nodes.
+
 STM32
 =====
 
 * SoC DTSI files now consistently use interrupt priority zero for all peripherals.
   Applications must now explicitly configure interrupt priorities using Devicetree
   if they previously relied on the values found in SoC DTSI files. (:github:`106188`)
+
+Syscon
+======
+
+* The syscon API functions :c:func:`syscon_read_reg` and :c:func:`syscon_write_reg` now use
+  ``uint32_t`` for the register offset parameter instead of ``uint16_t``. This allows for
+  larger register offsets. Code that explicitly declares ``uint16_t`` variables for the
+  register parameter or implements the syscon driver API functions may need to be updated.
+
+WiFi
+====
+
+* In the functions implemented by the :c:struct:`net_wifi_mgmt_offload`, internally
+  :c:struct:`ethernet_api` and :c:struct:`wifi_mgmt_ops`, a additional argument was added for
+  a pointer to :c:struct:`net_if`. This api is not directly exposed to the application, so only
+  out-of-tree drivers need to be updated. (:github:`106086`)
 
 .. zephyr-keep-sorted-stop
 
@@ -144,16 +231,40 @@ Bluetooth Audio
     :c:member:`bt_cap_commander_cb.broadcast_reception_start` is called. This also applies for
     :c:func:`bt_cap_commander_broadcast_reception_stop` in a similar manner. (:github:`101070`)
 
+* CCP
+
+  * :c:member:`bt_tbs_client_cb.technology` has changed the ``value`` parameter from ``uint32_t``
+    to ``enum bt_bearer_tech``. Applications using this application should switch the type.
+    (:github:`102430`)
+  * All ``BT_TBS_TECHNOLOGY_*`` values like ``BT_TBS_TECHNOLOGY_3G`` are renamed to
+    ``BT_BEARER_TECH_*`` like ``BT_BEARER_TECH_3G``. Applications can do search-and-replace from
+    ``BT_TBS_TECHNOLOGY`` to ``BT_BEARER_TECH``. Additionally the values are now defined in
+    :zephyr_file:`include/zephyr/bluetooth/assigned_numbers.h` instead of
+    :zephyr_file:`include/zephyr/bluetooth/audio/tbs.h`. (:github:`102430`)
+
 * CSIP
 
-   * Optional CSIS characteristics have been made configurable via Kconfig and must be enabled
-     explicitly:
+  * Optional CSIS characteristics have been made configurable via Kconfig and must be enabled
+    explicitly:
 
-     * Coordinated Set Size → :kconfig:option:`CONFIG_BT_CSIP_SET_MEMBER_SIZE_SUPPORT`
-     * Set Member Lock → :kconfig:option:`CONFIG_BT_CSIP_SET_MEMBER_LOCK_SUPPORT`
-     * Set Member Rank → :kconfig:option:`CONFIG_BT_CSIP_SET_MEMBER_RANK_SUPPORT`
+    * Coordinated Set Size → :kconfig:option:`CONFIG_BT_CSIP_SET_MEMBER_SIZE_SUPPORT`
+    * Set Member Lock → :kconfig:option:`CONFIG_BT_CSIP_SET_MEMBER_LOCK_SUPPORT`
+    * Set Member Rank → :kconfig:option:`CONFIG_BT_CSIP_SET_MEMBER_RANK_SUPPORT`
 
 .. zephyr-keep-sorted-stop
+
+Bluetooth Classic
+=================
+
+* The BR/EDR specific callbacks ``role_changed`` and ``br_mode_changed`` in
+  :c:struct:`bt_conn_cb` have been moved into a new sub-struct
+  :c:struct:`bt_conn_br_cb`, accessible via the ``br`` member. Application code
+  using these callbacks must update the designated initializers:
+
+  * ``.role_changed`` → ``.br.role_changed``
+  * ``.br_mode_changed`` → ``.br.mode_changed``
+
+  (:github:`108022`)
 
 Bluetooth HCI
 =============
@@ -212,3 +323,8 @@ Mbed TLS
 
 Architectures
 *************
+
+* A new architecture primitive, ``arch_cpu_irqs_are_enabled()``, has been added.
+  It returns the current interrupt-enable state of the calling CPU without
+  modifying it, complementing ``arch_irq_unlocked()`` which inspects a saved
+  key.  Out-of-tree architecture ports must provide an implementation.
