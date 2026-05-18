@@ -3136,6 +3136,8 @@ static const struct event_handler normal_events[] = {
 		      sizeof(struct bt_hci_evt_remote_ext_features)),
 	EVENT_HANDLER(BT_HCI_EVT_ROLE_CHANGE, bt_hci_role_change,
 		      sizeof(struct bt_hci_evt_role_change)),
+	EVENT_HANDLER(BT_HCI_EVT_CONN_PKT_TYPE_CHANGED, bt_hci_conn_pkt_type_changed,
+		      sizeof(struct bt_hci_evt_conn_pkt_type_changed)),
 #if defined(CONFIG_BT_POWER_MODE_CONTROL)
 	EVENT_HANDLER(BT_HCI_EVT_MODE_CHANGE, bt_hci_link_mode_change,
 		      sizeof(struct bt_hci_evt_mode_change)),
@@ -4007,6 +4009,7 @@ static int set_event_mask(void)
 		mask |= BT_EVT_MASK_REMOTE_NAME_REQ_COMPLETE;
 		mask |= BT_EVT_MASK_REMOTE_FEATURES;
 		mask |= BT_EVT_MASK_ROLE_CHANGE;
+		mask |= BT_EVT_MASK_CONN_PKT_TYPE_CHANGED;
 #ifdef CONFIG_BT_POWER_MODE_CONTROL
 		mask |= BT_EVT_MASK_MODE_CHANGE;
 #endif /* CONFIG_BT_POWER_MODE_CONTROL */
@@ -4046,9 +4049,9 @@ static int set_event_mask(void)
 
 const char *bt_hci_get_ver_str(uint8_t core_version)
 {
-	const char * const str[] = {
+	static const char * const str[] = {
 		"1.0b", "1.1", "1.2", "2.0", "2.1", "3.0", "4.0", "4.1", "4.2",
-		"5.0", "5.1", "5.2", "5.3", "5.4", "6.0", "6.1", "6.2"
+		"5.0", "5.1", "5.2", "5.3", "5.4", "6.0", "6.1", "6.2", "6.3"
 	};
 
 	if (core_version < ARRAY_SIZE(str)) {

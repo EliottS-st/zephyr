@@ -61,6 +61,13 @@ Haptics
 
 .. zephyr-keep-sorted-start re(^\w) ignorecase
 
+ADC
+===
+
+* The ``girqs`` and ``pcrs`` properties (array type) of :dtcompatible:`microchip,xec-adc` have been
+  replaced by encoded ``girqs`` (using ``MCHP_XEC_ECIA_GIRQ_ENC`` macros) and ``pcr-scr`` (int type)
+  for encoded PCR register index and bit position (:github:`105658`).
+
 Clock Control
 =============
 
@@ -95,6 +102,12 @@ Ethernet
   :dtcompatible:`nxp,enet-mac` need to be moved from the MAC node to the parent Ethernet controller
   node. (:github:`107352`)
 
+* ``port_generate_random_mac`` of the :c:struct:`dsa_api` got removed. Also
+  :c:struct:`dsa_port_config` now uses :c:struct:`net_eth_mac_config` to set the MAC address.
+  ``mac_addr`` and ``use_random_mac_addr`` members of :c:struct:`dsa_port_config` were removed.
+  Out-of-tree DSA drivers must update their port configuration code to use the new API and
+  structures. (:github:`108952`)
+
 Flash
 =====
 * :dtcompatible:`jedec,spi-nand` now requires a ``plane-bytes`` property, which indicates the size
@@ -113,6 +126,35 @@ GPIO
 
 * On STM32F1 series, GPIO output pins now use 50 MHz max. speed instead of 10 MHz. (:github:`104690`)
 
+Input
+=====
+
+* The ``no-disconnect`` property of :dtcompatible:`gpio-keys` has been replaced by enumeration
+  property ``zephyr,suspend-action``. The new property currently has three values, two of which
+  are direct replacements for the old situations:
+
+    * ``zephyr,suspend-action = "none";`` is the remplacement for the behavior when
+      when ``no-disconnect`` was present. Users of the ``no-disconnect`` property
+      should replace it with ``zephyr,suspend-action = "none";``.
+
+    * ``zephyr,suspend-action = "disconnect-with-pupd";`` is the replacement for the
+      behavior when ``no-disconnect`` was not present. This is selected by default
+      for backwards compatibility with the previous behavior.
+
+    * ``zephyr,suspend-action = "full-disconnect";`` is a new value.
+      (Refer to :dtcompatible:`the binding <gpio-keys>` for more details)
+
+  Users of the default configuration are advised to reconsider whether it really is appropriate;
+  migration to ``zephyr,suspend-action = "full-disconnect";`` is recommended. (:github:`108294`)
+
+* Kconfig options for the ft6146, ft5336, and cst8xx input drivers have been renamed to be
+  consistent with the other input drivers. Applications using the following Kconfig options
+  must update their configurations accordingly:
+
+  * ``CONFIG_INPUT_FT5336_PERIOD`` → :kconfig:option:`CONFIG_INPUT_FT5336_PERIOD_MS`
+  * ``CONFIG_INPUT_CST8XX_PERIOD`` → :kconfig:option:`CONFIG_INPUT_CST8XX_PERIOD_MS`
+  * ``CONFIG_INPUT_FT6146_PERIOD`` → :kconfig:option:`CONFIG_INPUT_FT6146_PERIOD_MS`
+
 NXP
 ===
 
@@ -126,6 +168,13 @@ NXP
   timer when :kconfig:option:`CONFIG_PM` is enabled. The SoC DTSI now sets the
   ``zephyr,system-timer`` chosen property, so boards that added the overlay
   described in the Zephyr 4.4 migration guide can remove it.
+
+PWM
+===
+
+* The ``pcrs`` property (array type) of :dtcompatible:`microchip,xec-pwm` has been replaced
+  by ``pcr-scr`` (int type) to use encoded PCR register index and bit position macros
+  (:github:`104570`).
 
 SD Host Controller
 ==================
@@ -152,8 +201,20 @@ SD Host Controller
   consolidated into the existing ``pwr-gpios`` property. Replace
   ``sdhi-on-gpios`` with ``pwr-gpios`` in out-of-tree devicetree nodes.
 
+Sensor
+======
+
+* The ``girqs`` and ``pcrs`` properties (array type) of :dtcompatible:`microchip,xec-tach` have been
+  replaced by ``pcr-scr`` (int type) to use encoded PCR register index and bit position macros.
+  GIRQ configuration is now handled via the ``microchip,dmec-ecia-girq`` binding include
+  (:github:`104808`).
+
 STM32
 =====
+
+* :dtcompatible:`gpio-keys` devices will fail to suspend unless property ``zephyr,suspend-action``
+  is present in Devicetree with value ``"none"`` or ``"full-disconnect"``. Refer to the migration
+  guide entry related to this binding for more details. (:github:`104690` / :github:`108294`)
 
 * SoC DTSI files now consistently use interrupt priority zero for all peripherals.
   Applications must now explicitly configure interrupt priorities using Devicetree
@@ -277,11 +338,31 @@ Bluetooth HCI
 Networking
 **********
 
+* Various IP routing related Kconfig options will have now ``IPV6`` prefix added to
+  them. This is done so that we can have IPv4 routing symbols that provide same
+  functionality as IPv6 ones but can be controlled separately.
+
 Ethernet
 ========
 
 * :kconfig:option:`CONFIG_NET_DEFAULT_IF_ETHERNET` now allows to get the first ethernet interface,
   instead of the first between ethernet and wifi.
+
+* The :kconfig:option:`CONFIG_ETH_QEMU_EXTRA_ARGS` and
+  :kconfig:option:`CONFIG_NET_QEMU_USER_EXTRA_ARGS` options can no longer be used to specify the MAC
+  address for the QEMU Ethernet device. Instead, :kconfig:option:`CONFIG_NET_QEMU_DEVICE_EXTRA_ARGS`
+  can be used. This is because we are no longer using the ``-nic`` option for QEMU, but the
+  ``-netdev`` and ``-device`` options. (:github:`107326`)
+
+PTP
+===
+
+* The PTP UDP protocol Kconfig symbols have been renamed for consistent capitalization:
+
+  * :kconfig:option:`CONFIG_PTP_UDP_IPv4_PROTOCOL` to
+    :kconfig:option:`CONFIG_PTP_UDP_IPV4_PROTOCOL`
+  * :kconfig:option:`CONFIG_PTP_UDP_IPv6_PROTOCOL` to
+    :kconfig:option:`CONFIG_PTP_UDP_IPV6_PROTOCOL`
 
 Other subsystems
 ****************
@@ -290,7 +371,6 @@ Other subsystems
   into ``subsys/mem_mgmt/demand_paging``. Custom backing store and eviction algorithm code need
   to be moved there.
 
-
 * The ring buffer "item" API in ``<zephyr/sys/ring_buffer.h>`` has been deprecated in favor of the new
   fixed-size queue API in ``<zephyr/sys/ringq.h>``.
 
@@ -298,6 +378,27 @@ Other subsystems
   :ref:`fixed_size_ringq_api`). Code that only used the item API at the byte level should switch to
   the byte-mode functions :c:func:`ring_buf_put` / :c:func:`ring_buf_get` calls on the same
   :c:struct:`ring_buf`. (:github:`98255`)
+
+* The :c:func:`ZTEST_BENCHMARK_SETUP_TEARDOWN` and :c:func:`ZTEST_BENCHMARK_TIMED_SETUP_TEARDOWN` macros have
+  been removed. Their setup/teardown signature has been folded into :c:func:`ZTEST_BENCHMARK` and
+  :c:func:`ZTEST_BENCHMARK_TIMED`, which now require explicit ``setup_fn`` and ``teardown_fn``
+  arguments at every call site. Pass ``NULL`` when a benchmark genuinely needs neither.
+
+  Update existing call sites as follows:
+
+  .. code-block:: c
+
+     /* Before */
+     ZTEST_BENCHMARK(suite, my_bench, 100) { /* ... */ }
+     ZTEST_BENCHMARK_TIMED(suite, my_bench, 1000) { /* ... */ }
+     ZTEST_BENCHMARK_SETUP_TEARDOWN(suite, my_bench, 100, setup, teardown) { /* ... */ }
+     ZTEST_BENCHMARK_TIMED_SETUP_TEARDOWN(suite, my_bench, 1000, setup, teardown) { /* ... */ }
+
+     /* After */
+     ZTEST_BENCHMARK(suite, my_bench, 100, NULL, NULL) { /* ... */ }
+     ZTEST_BENCHMARK_TIMED(suite, my_bench, 1000, NULL, NULL) { /* ... */ }
+     ZTEST_BENCHMARK(suite, my_bench, 100, setup, teardown) { /* ... */ }
+     ZTEST_BENCHMARK_TIMED(suite, my_bench, 1000, setup, teardown) { /* ... */ }
 
 Modules
 *******
@@ -320,6 +421,10 @@ Mbed TLS
   implicitly enabled by :kconfig:option:`CONFIG_MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_ENABLED`.
   Out-of-tree applications or board configurations that rely on TLS 1.3 PSK early data (0-RTT)
   must now explicitly enable :kconfig:option:`CONFIG_MBEDTLS_SSL_EARLY_DATA`.
+
+* ``CONFIG_PSA_CRYPTO_CLIENT`` has been removed as it was a duplicate of
+  :kconfig:option:`CONFIG_PSA_CRYPTO`. If you were using it, use
+  :kconfig:option:`CONFIG_PSA_CRYPTO` instead. (:github:`108960`)
 
 Architectures
 *************

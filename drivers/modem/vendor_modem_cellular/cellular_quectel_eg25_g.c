@@ -10,6 +10,8 @@
 
 MODEM_CELLULAR_COMMON_CHAT_MATCHES();
 
+MODEM_CELLULAR_UNSOL_DEFINE(quectel_eg25_g_unsol, MODEM_CELLULAR_COMMON_UNSOL_MATCHES);
+
 MODEM_CHAT_SCRIPT_CMDS_DEFINE(
 	quectel_eg25_g_init_chat_script_cmds, MODEM_CHAT_SCRIPT_CMD_RESP("ATE0", ok_match),
 	MODEM_CHAT_SCRIPT_CMD_RESP("AT+CFUN=4", ok_match),
@@ -48,6 +50,12 @@ MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_periodic_chat_script,
 			 quectel_eg25_g_periodic_chat_script_cmds, abort_matches,
 			 modem_cellular_chat_callback_handler, 4);
 
+static const struct modem_cellular_config_scripts quectel_eg25_g_scripts = {
+	.init = &quectel_eg25_g_init_chat_script,
+	.dial = &quectel_eg25_g_dial_chat_script,
+	.periodic = &quectel_eg25_g_periodic_chat_script,
+};
+
 #define MODEM_CELLULAR_DEVICE_QUECTEL_EG25_G(inst)                                                 \
 	MODEM_DT_INST_PPP_DEFINE(inst, MODEM_CELLULAR_INST_NAME(ppp, inst), NULL, 98, 1500, 64);   \
                                                                                                    \
@@ -59,8 +67,7 @@ MODEM_CHAT_SCRIPT_DEFINE(quectel_eg25_g_periodic_chat_script,
                                                                                                    \
 	MODEM_CELLULAR_DEFINE_AND_INIT_USER_PIPES(inst, (user_pipe_0, 3), (user_pipe_1, 4))        \
                                                                                                    \
-	MODEM_CELLULAR_DEFINE_INSTANCE(                                                            \
-		inst, 1500, 500, 15000, 5000, false, NULL, &quectel_eg25_g_init_chat_script,       \
-		&quectel_eg25_g_dial_chat_script, &quectel_eg25_g_periodic_chat_script, NULL)
+	MODEM_CELLULAR_DEFINE_INSTANCE(inst, 1500, 500, 15000, 5000, false,                        \
+				       &quectel_eg25_g_scripts, &quectel_eg25_g_unsol)
 
 DT_INST_FOREACH_STATUS_OKAY(MODEM_CELLULAR_DEVICE_QUECTEL_EG25_G)
