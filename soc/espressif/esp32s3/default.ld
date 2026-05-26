@@ -32,9 +32,9 @@ procpu_drom_len = DCACHE0_SIZE - APPCPU_ROM_SIZE;
 
 #if defined(CONFIG_ESP_SPIRAM)
 procpu_ext_dram_org = procpu_drom_org;
-procpu_ext_dram_len = CONFIG_ESP_SPIRAM_SIZE;
+procpu_ext_dram_len = procpu_drom_len;
 procpu_ext_iram_org = procpu_irom_org;
-procpu_ext_iram_len = CONFIG_ESP_SPIRAM_SIZE;
+procpu_ext_iram_len = procpu_irom_len;
 #endif
 
 /* RTC RAM memory segments */
@@ -913,6 +913,9 @@ SECTIONS
      * dummy bytes to ensure this
      */
     . += 16;
+
+    /* Enforce flash segment size alignment */
+    . = ALIGN(0x10);
 
     _text_end = ABSOLUTE(.);
     _instruction_reserved_end = ABSOLUTE(.);  /* This is a symbol marking the flash.text end, this can be used for mmu driver to maintain virtual address */

@@ -30,6 +30,7 @@
 		zephyr,shell-uart = &lpuart0;
 		zephyr,uart-pipe = &lpuart0;
 		zephyr,bt-c2h-uart = &lpuart0;
+		zephyr,crc = &crc;
 	};
 
 	user_led {
@@ -127,12 +128,7 @@ nbu: &nbu {
 
 		storage_partition: partition@17a000 {
 			label = "storage";
-			reg = <0x17a000 DT_SIZE_K(16)>;
-		};
-
-		hw_params_partition: partition@17e000 {
-			label = "hw-parameters";
-			reg = <0x17e000 DT_SIZE_K(8)>;
+			reg = <0x17a000 DT_SIZE_K(24)>;
 		};
 	};
 };
@@ -176,4 +172,8 @@ lptmr1: &lptmr_1 {
 
 &ieee802154 {
 	counter = <&lptmr1>;
+};
+
+&crc {
+	status = "okay";
 };

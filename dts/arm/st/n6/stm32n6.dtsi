@@ -76,6 +76,13 @@
 			status = "disabled";
 		};
 
+		clk_msi: clk-msi {
+			#clock-cells = <0>;
+			compatible = "st,stm32n6-msi-clock";
+			msi-range = <0>; /* 4MHz (reset value) */
+			status = "disabled";
+		};
+
 		clk_lse: clk-lse {
 			#clock-cells = <0>;
 			compatible = "st,stm32-lse-clock";
@@ -1349,7 +1356,7 @@
 
 			rtc: rtc@6004000 {
 				compatible = "st,stm32-rtc";
-				reg = <0x46004000 0x400>;
+				reg = <0x6004000 0x400>;
 				interrupts = <16 0>;
 				clocks = <&rcc STM32_CLOCK(APB4, 16)>;
 				alarms-count = <2>;
@@ -1409,8 +1416,7 @@
 				num-bidir-endpoints = <9>;
 				ram-size = <4096>;
 				maximum-speed = "high-speed";
-				clocks = <&rcc STM32_CLOCK(AHB5, 26)>,
-					 <&rcc STM32_SRC_HSE OTGPHY1CKREF_SEL(1)>;
+				clocks = <&rcc STM32_CLOCK(AHB5, 26)>;
 				phys = <&usbphyc1>;
 				status = "disabled";
 			};
@@ -1423,8 +1429,7 @@
 				num-bidir-endpoints = <9>;
 				ram-size = <4096>;
 				maximum-speed = "high-speed";
-				clocks = <&rcc STM32_CLOCK(AHB5, 29)>,
-					 <&rcc STM32_SRC_HSE OTGPHY2CKREF_SEL(1)>;
+				clocks = <&rcc STM32_CLOCK(AHB5, 29)>;
 				phys = <&usbphyc2>;
 				status = "disabled";
 			};
@@ -1432,14 +1437,16 @@
 			usbphyc1: usbphyc@803fc00 {
 				compatible = "st,stm32-usbphyc";
 				reg = <0x803fc00 0x400>;
-				clocks = <&rcc STM32_CLOCK(AHB5, 27)>;
+				clocks = <&rcc STM32_CLOCK(AHB5, 27)>,
+					 <&rcc STM32_SRC_HSE OTGPHY1_SEL(3)>;
 				#phy-cells = <0>;
 			};
 
 			usbphyc2: usbphyc@80c0000 {
 				compatible = "st,stm32-usbphyc";
 				reg = <0x80c0000 0x400>;
-				clocks = <&rcc STM32_CLOCK(AHB5, 28)>;
+				clocks = <&rcc STM32_CLOCK(AHB5, 28)>,
+					 <&rcc STM32_SRC_HSE OTGPHY2_SEL(3)>;
 				#phy-cells = <0>;
 			};
 

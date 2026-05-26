@@ -88,8 +88,11 @@ MEMORY
 
 #if defined(CONFIG_ESP_SPIRAM)
   /* ext_dram_seg and irom0_0_seg share the same bus (unified cache address space).
+   * Size the segment to the cache window so the dummy section reserved for
+   * flash content plus the PSRAM heap window always fit; the actual usable
+   * PSRAM is capped at link time by the ext_ram-overflow ASSERT below.
    * A dummy section is used to skip flash content and avoid overlap. */
-  ext_dram_seg(RW): org = IROM_SEG_ORG, len = CONFIG_ESP_SPIRAM_SIZE
+  ext_dram_seg(RW): org = EXTRAM_START, len = EXTRAM_SIZE
 #endif
 
 #if CONFIG_ESP32_ULP_COPROC_ENABLED
@@ -445,6 +448,7 @@ SECTIONS
 
     /* [mapping:esp_psram] */
     *libzephyr.a:esp_psram_impl_ap_quad.*(.literal .literal.* .text .text.*)
+    *libzephyr.a:esp_psram.*(.literal .literal.* .text .text.*)
     *libzephyr.a:mspi_timing_config.*(.literal .literal.* .text .text.*)
     *libzephyr.a:mspi_timing_tuning.*(.literal .literal.* .text .text.*)
     *libzephyr.a:mspi_timing_by_mspi_delay.*(.literal .literal.* .text .text.*)
@@ -643,6 +647,7 @@ SECTIONS
 
     /* [mapping:esp_psram] */
     *libzephyr.a:esp_psram_impl_ap_quad.*(.rodata .rodata.* .srodata .srodata.*)
+    *libzephyr.a:esp_psram.*(.rodata .rodata.* .srodata .srodata.*)
     *libzephyr.a:mspi_timing_config.*(.rodata .rodata.* .srodata .srodata.*)
     *libzephyr.a:mspi_timing_tuning.*(.rodata .rodata.* .srodata .srodata.*)
     *libzephyr.a:mspi_timing_by_mspi_delay.*(.rodata .rodata.* .srodata .srodata.*)
@@ -764,8 +769,23 @@ SECTIONS
   .dram0.noinit (NOLOAD):
   {
     . = ALIGN(4);
+#ifdef CONFIG_ESP32_WIFI_NET_ALLOC_SPIRAM
+    *(EXCLUDE_FILE(
+      *libdrivers__wifi.a:*
+      *libsubsys__net__l2__ethernet.a:*
+      *libsubsys__net__lib__config.a:*
+      *libsubsys__net__ip.a:*
+      *libsubsys__net.a:* ) .noinit)
+    *(EXCLUDE_FILE(
+      *libdrivers__wifi.a:*
+      *libsubsys__net__l2__ethernet.a:*
+      *libsubsys__net__lib__config.a:*
+      *libsubsys__net__ip.a:*
+      *libsubsys__net.a:* ) .noinit.*)
+#else
     *(.noinit)
     *(.noinit.*)
+#endif /* CONFIG_ESP32_WIFI_NET_ALLOC_SPIRAM */
 #ifdef CONFIG_USERSPACE
     z_user_stacks_start = .;
     *(.user_stacks*)
@@ -853,7 +873,6 @@ SECTIONS
     _stext = .;
     _instruction_reserved_start = ABSOLUTE(.);
     _text_start = ABSOLUTE(.);
-    _instruction_reserved_start = ABSOLUTE(.);
     __text_region_start = ABSOLUTE(.);
     __rom_region_start = ABSOLUTE(.);
 
@@ -885,9 +904,11 @@ SECTIONS
       */
     . += 16;
 
+    /* Enforce flash segment size alignment */
+    . = ALIGN(0x10);
+
     _instruction_reserved_end = ABSOLUTE(.);
     _text_end = ABSOLUTE(.);
-    _instruction_reserved_end = ABSOLUTE(.);
     __text_region_end = ABSOLUTE(.);
     /* Align for PMP granularity requirements */
     MPU_MIN_SIZE_ALIGN
@@ -906,6 +927,12 @@ SECTIONS
   {
     . = ALIGN(CACHE_ALIGN);
   } GROUP_LINK_IN(ROMABLE_REGION)
+
+  /* Move drom0 after .text region to allow proper memory mapping. */
+  .flash_rodata_dummy (NOLOAD) :
+  {
+    . += ALIGN(_instruction_reserved_end - _instruction_reserved_start, CACHE_ALIGN);
+  } GROUP_LINK_IN(RODATA_REGION)
 
   /* Symbols used during the application memory mapping */
   _image_drom_start = LOADADDR(.flash.rodata);
@@ -1009,6 +1036,14 @@ SECTIONS
   {
     _ext_ram_start = ABSOLUTE(.);
     _ext_ram_noinit_start = ABSOLUTE(.);
+
+#ifdef CONFIG_ESP32_WIFI_NET_ALLOC_SPIRAM
+    *libdrivers__wifi.a:(.noinit .noinit.*)
+    *libsubsys__net__l2__ethernet.a:(.noinit .noinit.*)
+    *libsubsys__net__lib__config.a:(.noinit .noinit.*)
+    *libsubsys__net__ip.a:(.noinit .noinit.*)
+    *libsubsys__net.a:(.noinit .noinit.*)
+#endif
     . = ALIGN(16);
     *(.ext_ram_noinit.*)
     . = ALIGN(16);
