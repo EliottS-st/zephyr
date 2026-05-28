@@ -11,8 +11,11 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(wifi_st67w611m1, CONFIG_WIFI_LOG_LEVEL);
 
+#include <errno.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/types.h>
+#include <zephyr/kernel/thread_stack.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/net_if.h>
@@ -22,7 +25,7 @@ LOG_MODULE_REGISTER(wifi_st67w611m1, CONFIG_WIFI_LOG_LEVEL);
 #include <modem_cmd_handler.h>
 
 #include "st67w611m1_drv.h"
-#include "st67w611m1_spi_poc.h" // TODO POC
+#include "st67w611m1_spi.h"
 
 #define ST67W611M1_ETH_MTU 1500
 
@@ -32,6 +35,9 @@ LOG_MODULE_REGISTER(wifi_st67w611m1, CONFIG_WIFI_LOG_LEVEL);
 NET_BUF_POOL_DEFINE(mdm_recv_pool, BUF_POOL_BUF_COUNT, BUF_POOL_BUF_SIZE, 0, NULL);
 
 K_KERNEL_STACK_DEFINE(st67_workq_stack, CONFIG_ST67W611M1_WORKQ_STACK_SIZE);
+K_KERNEL_STACK_DEFINE(st67_rx_stack, CONFIG_ST67W611M1_RX_THREAD_STACK_SIZE);
+
+static struct k_thread st67_rx_thread;
 
 static struct st67_data driver_data;
 
@@ -42,11 +48,28 @@ static inline int st67_send_at_cmd(struct st67_data *data, const struct modem_cm
 			      &data->sem_cmd_response_wait, timeout);
 }
 
-static inline int st67_write_spi(struct modem_iface *iface, const uint8_t *buf, size_t size)
+/* Callback used by the modem cmd handler (read) */
+static inline int st67_receive_from_bus(struct modem_iface *iface, uint8_t *buf, size_t size,
+					size_t *bytes_read)
 {
-	LOG_DBG("SPI WRITE CALL");
-	printk(buf);
-	printk("\n");
+	int ret = st67_spi_receive(buf, size);
+	if (ret < 0) {
+		return ret;
+	}
+	*bytes_read = ret;
+
+	printk("%s\n", buf);
+	return 0;
+}
+
+/* Callback used by the modem cmd handler (write) */
+static inline int st67_send_to_bus(struct modem_iface *iface, const uint8_t *buf, size_t size)
+{
+	int ret = st67_spi_send(buf, size);
+	if (ret < 0) {
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -55,14 +78,15 @@ static void st67_scan_work(struct k_work *work)
 	int ret;
 	struct st67_data *data;
 	data = CONTAINER_OF(work, struct st67_data, scan_work);
-	LOG_DBG("st67_scan_work: started");
+	LOG_DBG("started");
 
 	static const struct modem_cmd cmds[] = {
-		// MODEM_CMD_DIRECT("+CWLAP:", ); // TODO no direct cmd
+		// MODEM_CMD_DIRECT("+CWLAP:", ), // TODO no direct cmd
 		// TODO add scan_done
 	};
 
-	ret = st67_send_at_cmd(data, cmds, ARRAY_SIZE(cmds), "AT+CWLAP", ST67W611M1_SCAN_TIMEOUT);
+	ret = st67_send_at_cmd(data, cmds, ARRAY_SIZE(cmds), "AT+CWLAP\r\n",
+			       ST67W611M1_SCAN_TIMEOUT);
 	if (ret < 0) {
 		LOG_ERR("Scan failed: err %d", ret);
 	}
@@ -90,10 +114,27 @@ static int st67_scan(const struct device *dev, struct net_if *iface,
 
 	data->scan_cb = cb;
 
-	LOG_DBG("st67_scan: submit scan work");
+	LOG_DBG("submit scan work");
 
 	k_work_submit_to_queue(&data->workq, &data->scan_work);
 	return 0;
+}
+
+static void st67_rx(void *p1, void *p2, void *p3)
+{
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct st67_data *data = p1;
+
+	while (true) {
+		LOG_DBG("RX waiting");
+		spi_wait_for_rx();
+		LOG_DBG("RX wait over");
+		modem_cmd_handler_process(&data->mctx.cmd_handler, &data->mctx.iface);
+
+		k_yield();
+	}
 }
 
 static const struct modem_cmd response_cmds[] = {
@@ -105,16 +146,21 @@ static const struct modem_cmd unsol_cmds[] = {
 	MODEM_CMD("CW:CONNECTED", NULL, 0U, ""),
 };
 
-int st67_init(const struct device *dev)
+static int st67_init(const struct device *dev)
 {
 	int ret;
 	struct st67_data *data = dev->data;
 
-	spi_protocol_init(); // TODO POC
+	ret = st67_spi_init();
+	if (ret < 0) {
+		LOG_ERR("SPI init error: %d", ret);
+		goto out;
+	}
 
 	k_sem_init(&data->sem_cmd_response_wait, 0, 1);
 
-	/* Implemented with work items just like esp_at driver to return the API calls quickly */
+	/* Implemented with work items just like esp_at driver to return the API calls quickly and
+	 * not wait for semaphore (modem_cmd_send()) */
 	k_work_init(&data->scan_work, st67_scan_work);
 	k_work_queue_start(&data->workq, st67_workq_stack, K_KERNEL_STACK_SIZEOF(st67_workq_stack),
 			   CONFIG_ST67W611M1_WORKQ_THREAD_PRIORITY, NULL);
@@ -125,12 +171,12 @@ int st67_init(const struct device *dev)
 		.match_buf_len = sizeof(data->cmd_match_buf),
 		.buf_pool = &mdm_recv_pool,
 		.alloc_timeout = K_NO_WAIT,
-		.eol = "\r\n",
+		.eol = NULL, /* \r\n is handled in the commands directly for SPI efficiency. */
 		.user_data = NULL,
 		.response_cmds = response_cmds,
-		.response_cmds_len = sizeof(response_cmds),
+		.response_cmds_len = ARRAY_SIZE(response_cmds),
 		.unsol_cmds = unsol_cmds,
-		.unsol_cmds_len = sizeof(unsol_cmds),
+		.unsol_cmds_len = ARRAY_SIZE(unsol_cmds),
 	};
 	ret = modem_cmd_handler_init(&data->mctx.cmd_handler, &data->cmd_handler_data,
 				     &cmd_handler_config);
@@ -146,10 +192,16 @@ int st67_init(const struct device *dev)
 	}
 
 	/* cmd handler cb register */
+	/* Done this way because cmd handler was designed mainly for UART */
 	/* TODO might be implemented in something like drivers/modem/modem_iface_spi.c */
-	data->mctx.iface.write = st67_write_spi;
+	data->mctx.iface.read = st67_receive_from_bus;
+	data->mctx.iface.write = st67_send_to_bus;
 
 	/* RX thread */
+	k_thread_create(&st67_rx_thread, st67_rx_stack, K_KERNEL_STACK_SIZEOF(st67_rx_stack),
+			st67_rx, data, NULL, NULL,
+			K_PRIO_COOP(CONFIG_ST67W611M1_RX_THREAD_PRIORITY), 0, K_NO_WAIT);
+	k_thread_name_set(&st67_rx_thread, "st67_rx_thread");
 
 out:
 	return ret;

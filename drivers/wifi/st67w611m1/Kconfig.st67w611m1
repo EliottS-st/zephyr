@@ -8,6 +8,9 @@ menuconfig ST67W611M1
 	select MODEM
 	select MODEM_CONTEXT
 	select MODEM_CMD_HANDLER
+	select GPIO
+	select SPI
+	select SPI_STM32_DMA if SOC_FAMILY_STM32
 
 if ST67W611M1
 
@@ -24,5 +27,27 @@ config ST67W611M1_WORKQ_THREAD_PRIORITY
 config ST67W611M1_WORKQ_STACK_SIZE
 	int "Stack size of the driver work queue"
 	default 1024
+
+config ST67W611M1_RX_THREAD_PRIORITY
+	int "Priority of the RX thread"
+	default 7
+
+config ST67W611M1_RX_THREAD_STACK_SIZE
+	int "Stack size of the RX thread"
+	default 1024
+
+config ST67W611M1_SPI_PROCESSOR_THREAD_PRIORITY
+	int "Priority of the thread processing the SPI TX and RX transfers"
+	default 8
+
+config ST67W611M1_SPI_PROCESSOR_THREAD_STACK_SIZE
+	int "Stack size of the SPI TX RX transfer thread`"
+	default 1024
+
+config HEAP_MEM_POOL_ADD_SIZE_SPI_PKT
+	int "SPI packet memory pool size"
+	default 1280
+	help
+		# Minimum system heap size for allocating spi_pkt objects embedding buffer ptr
 
 endif # ST67W611M1

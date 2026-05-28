@@ -1,4 +1,4 @@
-# Copyright (c) 2006 STMicroelectronics
+# Copyright (c) 2026 STMicroelectronics
 # SPDX-License-Identifier: Apache-2.0
 
 description: ST67W611M1 Wi-Fi module
@@ -8,14 +8,21 @@ compatible: "st,st67w611m1"
 include: spi-device.yaml
 
 properties:
+  chip-select-gpios:
+    type: phandle-array
+    required: true
+
   ready-gpios:
     type: phandle-array
     required: true
 
-  chipen-gpios:
+  chip-en-gpios:
     type: phandle-array
     required: true
 
   boot-gpios:
     type: phandle-array
+    required: true
+
+  spi-hold-cs:
     required: true
