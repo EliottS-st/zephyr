@@ -56,7 +56,7 @@ API Changes
 Removed APIs and options
 ========================
 
-* The following deprecated networking options and APIs have been removed:
+* Networking
 
     * ``CONFIG_NET_TC_SKIP_FOR_HIGH_PRIO``
     * ``CONFIG_NET_SOCKETS_POLL_MAX``
@@ -72,6 +72,11 @@ Removed APIs and options
     * ``openthread_api_mutex_unlock()``
     * ``struct openthread_state_changed_cb``
     * ``TLS_CREDENTIAL_SERVER_CERTIFICATE``
+
+* Random
+
+    * ``CONFIG_CTR_DRBG_CSPRNG_GENERATOR``
+    * ``CONFIG_CS_CTR_DRBG_PERSONALIZATION``
 
 * West sign support for imgtool, which was deprecated in Zephyr 4.0, has been removed.
 
@@ -119,10 +124,36 @@ New APIs and options
 
   * :c:member:`pcm_stream_cfg.gain_db`
 
+* Bluetooth
+
+  * Audio
+
+    * :c:func:`bt_ascs_register`
+    * :c:func:`bt_ascs_unregister`
+
+  * Mesh
+
+    * :c:struct:`bt_mesh_lpn_timing`
+    * :c:func:`bt_mesh_stat_lpn_timing_get`
+    * :c:func:`bt_mesh_stat_lpn_timing_reset`
+
 * Devicetree
 
   * :c:macro:`DT_IRQN_BY_NAME`
   * :c:macro:`DT_INST_IRQN_BY_NAME`
+
+* Haptics
+
+  * :c:enumerator:`haptics_monitor`
+  * :c:enumerator:`haptics_monitor_type`
+  * :c:enumerator:`haptics_source`
+  * :c:union:`haptics_config`
+  * :c:func:`haptics_calibrate`
+  * :c:func:`haptics_monitor_get`
+  * :c:func:`haptics_monitor_set`
+  * :c:func:`haptics_select_source`
+  * :c:func:`haptics_set_level`
+  * :c:func:`haptics_stream_samples`
 
 * LoRa
 
@@ -130,6 +161,10 @@ New APIs and options
   * :c:func:`lora_recv_duty_cycle_async`
 
 * :c:struct:`sys_ringq` (see :ref:`fixed_size_ringq_api`)
+
+* Network
+
+  * Add :c:func:`net_eth_set_if_type_wifi` to set the ethernet interface type to Wi-Fi.
 
 .. zephyr-keep-sorted-stop
 

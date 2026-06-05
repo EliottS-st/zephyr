@@ -86,20 +86,8 @@ Boards
 Device Drivers and Devicetree
 *****************************
 
-Haptics
-=======
-
-* The ``cirrus,cs40l5x`` compatible has been replaced by variant-specific compatibles
-  :dtcompatible:`cirrus,cs40l50`, :dtcompatible:`cirrus,cs40l51`, :dtcompatible:`cirrus,cs40l52`,
-  and :dtcompatible:`cirrus,cs40l53`. Applications using the old compatible must update their
-  devicetree nodes accordingly.
-
-.. Group contents in this section by subsystem, e.g.:
-..
-.. ADC
-.. ===
-..
-.. ...
+.. Only place contents common to all device drivers here. Contents specific to one driver subsystem
+   goes into its own subsection, below.
 
 * The :c:macro:`DEVICE_API` macro is now mandatory for declaring device driver API instances of any
   upstream driver class, including in out-of-tree drivers. :c:macro:`DEVICE_API_GET` now asserts
@@ -108,6 +96,13 @@ Haptics
   must also declare the relationship with :c:macro:`DEVICE_API_EXTENDS`, so that
   :c:macro:`DEVICE_API_GET` for the parent class succeeds on devices implementing the child API.
   See :ref:`device_driver_api` for details.
+
+.. Group contents in this section by subsystem, e.g.:
+..
+.. ADC
+.. ===
+..
+.. ...
 
 .. zephyr-keep-sorted-start re(^\w) ignorecase
 
@@ -126,6 +121,17 @@ Clock Control
   ``clock-div`` properties remain supported but are deprecated. Existing
   RT11xx overlays should be updated using the mapping
   ``loop-div = clock-mult * 2`` and ``post-div = clock-div``.
+
+Controller Area Network (CAN)
+=============================
+
+* The header files for the NXP SJA1000 (``can_sja1000.h``) and Bosch M_CAN (``can_mcan.h``) CAN
+  controller driver backends where converted to library-specific includes. Out-of-tree drivers based
+  on these backends will need to update their include directives accordingly.
+
+* The Bosch M_CAN driver now solely uses RX FIFO0 for processing received CAN frames, ensuring these
+  are processed in the order received on the bus. Out-of-tree users may want to update any
+  ``bosch,mram-cfg`` devicetree property overrides to allocate all FIFO elements to RX FIFO0.
 
 Devicetree
 ==========
@@ -153,6 +159,26 @@ Display
   selection have been removed in favour of setting the pixel-format property directly in devicetree
   on the SDL pseudo-device node using the PANEL_PIXEL_FORMAT_* macros from
   :zephyr_file:`include/zephyr/dt-bindings/display/panel.h`. (:github:`104099`)
+
+DMA
+===
+
+* :dtcompatible:`silabs,siwx91x-dma` has been renamed :dtcompatible:`silabs,udma`. The Kconfig
+  options have also been renamed to align with this new name (``DMA_SILABS_SIWX91X`` in
+  ``DMA_SILABS_SIWX91X_UDMA`` and ``DMA_SILABS_SIWX91X_SG_BUFFER_COUNT`` in
+  ``DMA_SILABS_SIWX91X_UDMA_DESCR_COUNT``)
+
+* To align with the other drivers, ``GPDMA_SILABS_SIWX91X_DESCRIPTOR_COUNT`` has been renamed in
+  ``DMA_SILABS_SIWX91X_GPDMA_DESCR_COUNT``.
+
+ESPI
+====
+
+* ECUSTOM_HOST_SUBS_INTERRUPT_EN has been deprecated in favor of new API that allows fine-grained
+  enable/disable control of individual eSPI hardware interrupts.
+  This replaces the current all-or-nothing approach, which is tightly coupled to
+  CONFIG_ESPI_PERIPHERAL_CUSTOM_OPCODE and single eSPI ACPI HW block instance in all eSPI drivers.
+  This will be completely removed in the next Zephyr release to give time for transition.
 
 Ethernet
 ========
@@ -199,6 +225,14 @@ GPIO
 
 * On STM32F1 series, GPIO output pins now use 50 MHz max. speed instead of 10 MHz. (:github:`104690`)
 
+Haptics
+=======
+
+* The ``cirrus,cs40l5x`` compatible has been replaced by variant-specific compatibles
+  :dtcompatible:`cirrus,cs40l50`, :dtcompatible:`cirrus,cs40l51`, :dtcompatible:`cirrus,cs40l52`,
+  and :dtcompatible:`cirrus,cs40l53`. Applications using the old compatible must update their
+  devicetree nodes accordingly.
+
 Input
 =====
 
@@ -227,6 +261,28 @@ Input
   * ``CONFIG_INPUT_FT5336_PERIOD`` → :kconfig:option:`CONFIG_INPUT_FT5336_PERIOD_MS`
   * ``CONFIG_INPUT_CST8XX_PERIOD`` → :kconfig:option:`CONFIG_INPUT_CST8XX_PERIOD_MS`
   * ``CONFIG_INPUT_FT6146_PERIOD`` → :kconfig:option:`CONFIG_INPUT_FT6146_PERIOD_MS`
+
+  * Nunchuk driver wronlgy reported ``INPUT_KEY_Z``, respective ``INPUT_KEY_C`` in button events. This
+    has been fixed and ``INPUT_BTN_Z``, respective ``INPUT_BTN_C`` is used now.
+
+Interrupt Controllers
+=====================
+
+* All interrupt controller bindings now use ``flags`` as the interrupt cell name
+  instead of ``sense``. The following interrupt controller bindings were updated:
+
+  * :dtcompatible:`intel,ioapic`
+  * :dtcompatible:`intel,loapic`
+  * :dtcompatible:`cdns,xtensa-core-intc`
+  * :dtcompatible:`intel,ace-intc`
+  * :dtcompatible:`intel,cavs-intc`
+  * :dtcompatible:`snps,designware-intc`
+  * :dtcompatible:`mediatek,adsp_intc`
+
+  Drivers using these interrupt controllers are updated to use ``flags`` as the cell name.
+  However, any out-of-tree drivers that directly access interrupt properties using
+  ``DT_INST_IRQ(n, sense)`` or ``DT_IRQ(node, sense)`` should be updated to use ``flags`` instead
+  of ``sense``.
 
 NXP
 ===
@@ -290,11 +346,34 @@ Sensor
   GIRQ configuration is now handled via the ``microchip,dmec-ecia-girq`` binding include
   (:github:`104808`).
 
+* The devicetree compatible ``tdk,ntcg163jf103ft1`` has been renamed to
+  :dtcompatible:`tdk,ntcgxx3jx103x` to reflect that the compensation values are identical for TDK
+  NTCG thermistor parts with the same resistance (R25) and beta (B25/85) values, as indicated in the
+  part naming scheme (:github:`110123`).
+
 Serial
 ======
 
 * The return type of :c:func:`uart_irq_update` is now ``void`` instead of ``int``.
   (:github:`105231`)
+
+SPI
+===
+
+* ``SPI_SILABS_SIWX91X_GSPI_DMA`` and ``SPI_SILABS_SIWX91X_GSPI_DMA_MAX_BLOCKS`` have been removed.
+  They are replaced by ``SPI_SILABS_SIWX91X_GSPI_DMA_DESCR_COUNT`` which allow to enable DMA and
+  configure the descriptor count.
+
+Stepper
+=======
+
+* The ``activate-stallguard2``, ``stallguard-threshold-velocity`` and ``stallguard-velocity-check-interval-ms``
+  properties of :dtcompatible:`adi,tmc50xx-stepper-ctrl` and :dtcompatible:`adi,tmc51xx-stepper-ctrl` have
+  been removed. The stallguard configuration is now done at runtime using
+  :c:func:`tmc50xx_stepper_ctrl_configure_stallguard`, :c:func:`tmc51xx_stepper_ctrl_configure_stallguard`
+  and :c:struct:`tmc_stallguard_settings`. Out-of-tree drivers using these properties
+  must be updated to remove them.
+  (:github:`110062`)
 
 STM32
 =====
@@ -306,6 +385,14 @@ STM32
 * SoC DTSI files now consistently use interrupt priority zero for all peripherals.
   Applications must now explicitly configure interrupt priorities using Devicetree
   if they previously relied on the values found in SoC DTSI files. (:github:`106188`)
+
+* :dtcompatible:`st,stm32-sai` binding has been restructured to reflect the SAI hardware
+  topology. The parent node now represents the SAI Block controller, while a new
+  ``child-binding`` represents the SAI Sub-Block instances.
+  The following properties shall be moved from the parent SAI node to a child sub-block node:
+  ``dmas``, ``dma-names`` (now validated against ``enum: [tx, rx]``), ``pinctrl-0``,
+  ``pinctrl-names``, ``mclk-enable``, ``mclk-divider``, ``synchronous``, and
+  ``fifo-threshold``. (:github:`104423`)
 
 Syscon
 ======
@@ -433,6 +520,8 @@ Bluetooth Classic
 
   (:github:`108022`)
 
+* Renamed ``BT_DEVICE_VEDNOR_ID`` to :kconfig:option:`BT_DEVICE_VENDOR_ID` to fix a typo.
+
 Bluetooth HCI
 =============
 
@@ -440,6 +529,17 @@ Bluetooth HCI
   :dtcompatible:`bflb,bt-hci`, now that a single binding covers all Bouffalo Lab
   on-chip BLE controllers (BL60x/BL70x/BL70XL). Out-of-tree boards and shields
   must update their devicetree nodes accordingly.
+
+* Bluetooth HCI drivers now have to provide a mandatory common struct as the first field of
+  their data (:c:struct:`bt_hci_driver_data`) and config (:c:struct:`bt_hci_driver_config`)
+  structs.
+
+* The HCI driver :c:member:`bt_hci_driver_api.open` callback no longer has a ``recv`` parameter;
+  rather the common HCI driver layer code takes care of managing this as part of the common
+  data struct. There is a new :c:func:`bt_hci_recv` API for drivers to pass data the higher
+  layer (e.g. the Bluetooth Host stack). For drivers that need access to any error from recv()
+  (most don't) there's also a new :c:func:`bt_hci_recv_err` API that leaves the responsibility
+  of unrefing the buffer to the caller in case of error situations.
 
 Networking
 **********
@@ -578,6 +678,14 @@ Other subsystems
      ZTEST_BENCHMARK_TIMED(suite, my_bench, 1000, NULL, NULL) { /* ... */ }
      ZTEST_BENCHMARK(suite, my_bench, 100, setup, teardown) { /* ... */ }
      ZTEST_BENCHMARK_TIMED(suite, my_bench, 1000, setup, teardown) { /* ... */ }
+
+Random
+======
+
+* ``CONFIG_CTR_DRBG_CSPRNG_GENERATOR`` has been removed.
+  Use :kconfig:option:`CONFIG_PSA_CSPRNG_GENERATOR` instead.
+
+* ``CONFIG_CS_CTR_DRBG_PERSONALIZATION`` has been removed. It did not have any effect.
 
 Modules
 *******

@@ -2526,7 +2526,7 @@ static void hci_cmd_done(uint16_t opcode, uint8_t status, struct net_buf *evt_bu
 	}
 
 	/* Take the original command buffer reference. */
-	buf = atomic_ptr_clear((atomic_ptr_t *)&bt_dev.sent_cmd);
+	buf = net_buf_take(&bt_dev.sent_cmd);
 
 	if (!buf) {
 		LOG_ERR("No command sent for cmd complete 0x%04x", opcode);
@@ -4540,12 +4540,11 @@ static int bt_recv_unsafe(struct net_buf *buf)
 #endif /* CONFIG_BT_ISO */
 	default:
 		LOG_ERR("Invalid buf type %u", type);
-		net_buf_unref(buf);
 		return -EINVAL;
 	}
 }
 
-int bt_hci_recv(const struct device *dev, struct net_buf *buf)
+static int bt_recv(const struct device *dev, struct net_buf *buf)
 {
 	ARG_UNUSED(dev);
 	int err;
@@ -4740,7 +4739,7 @@ int bt_enable(bt_ready_cb_t cb)
 	k_thread_name_set(&bt_workq.thread, "BT RX WQ");
 #endif
 
-	err = bt_hci_open(bt_dev.hci, bt_hci_recv);
+	err = bt_hci_open(bt_dev.hci, bt_recv);
 	if (err) {
 		LOG_ERR("HCI driver open failed (%d)", err);
 		return err;

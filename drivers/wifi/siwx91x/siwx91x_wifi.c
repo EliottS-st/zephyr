@@ -24,7 +24,7 @@
 #define SIWX91X_MAX_RTS_THRESHOLD 2347
 #define MAX_24GHZ_CHANNELS 14
 
-LOG_MODULE_REGISTER(siwx91x_wifi);
+LOG_MODULE_REGISTER(siwx91x_wifi, CONFIG_WIFI_LOG_LEVEL);
 
 NET_BUF_POOL_FIXED_DEFINE(siwx91x_tx_pool, 1, _NET_ETH_MAX_FRAME_SIZE, 0, NULL);
 
@@ -547,6 +547,13 @@ static void siwx91x_iface_init(struct net_if *iface)
 	ret = sl_wifi_set_advanced_client_configuration(SL_WIFI_CLIENT_INTERFACE, &client_config);
 	if (ret != SL_STATUS_OK) {
 		LOG_ERR("Failed to set advanced client config: 0x%x", ret);
+		return;
+	}
+
+	ret = sl_wifi_set_join_configuration(SL_WIFI_CLIENT_INTERFACE,
+					     SL_WIFI_JOIN_FEAT_PS_CMD_LISTEN_INTERVAL_VALID);
+	if (ret != SL_STATUS_OK) {
+		LOG_ERR("Failed to set join configuration: 0x%x", ret);
 		return;
 	}
 

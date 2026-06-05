@@ -1285,10 +1285,20 @@ struct bt_conn_le_tx_power {
 	/** Input: 1M, 2M, Coded S2 or Coded S8 */
 	uint8_t phy;
 
-	/** Output: current transmit power level */
+	/** @brief Output: current transmit power level in dBm.
+	 *
+	 *  Range depends on which HCI command is used:
+	 *  - -30 to +20 when @p phy is 0 (HCI_Read_Transmit_Power_Level)
+	 *  - -127 to +20 when @p phy is non-zero (HCI_LE_Enhanced_Read_Transmit_Power_Level)
+	 */
 	int8_t current_level;
 
-	/** Output: maximum transmit power level */
+	/** @brief Output: maximum transmit power level in dBm.
+	 *
+	 *  Range depends on which HCI command is used:
+	 *  - -30 to +20 when @p phy is 0 (HCI_Read_Transmit_Power_Level)
+	 *  - -127 to +20 when @p phy is non-zero (HCI_LE_Enhanced_Read_Transmit_Power_Level)
+	 */
 	int8_t max_level;
 };
 
@@ -1716,8 +1726,8 @@ int bt_conn_le_phy_update(struct bt_conn *conn,
  *  Use @ref BT_GAP_LE_PHY_NONE to indicate no preference.
  *  For possible PHY values see @ref bt_gap_le_phy.
  *
- *  @param pref_tx_phy  Preferred transmitter phy prarameters.
- *  @param pref_rx_phy  Preferred receiver phy prameters.
+ *  @param pref_tx_phy  Preferred transmitter phy parameters.
+ *  @param pref_rx_phy  Preferred receiver phy parameters.
  *
  *  @return Zero on success or (negative) error code on failure.
  */

@@ -185,6 +185,7 @@ ADI Platforms:
     - boards/adi/
     - boards/common/*adi*
     - boards/shields/ad_apardpfw_sl/
+    - boards/shields/adi_lsmspg/
     - boards/shields/eval*ardz/
     - boards/shields/pmod_acl/
     - drivers/*/*max*
@@ -638,6 +639,7 @@ Bluetooth Host:
     - Thalley
     - cvinayak
     - HaavardRei
+    - alxelax
   files:
     - doc/services/connectivity/bluetooth/
     - include/zephyr/bluetooth/
@@ -824,6 +826,7 @@ Bouffalolab Platforms:
   maintainers:
     - VynDragon
   collaborators:
+    - hasheddan
     - josuah
     - will-tm
   files:
@@ -1705,6 +1708,19 @@ Documentation Infrastructure:
   labels:
     - "area: DAI"
 
+"Drivers: DALI":
+  status: maintained
+  maintainers:
+    - svenhaedrich
+  files:
+    - doc/hardware/peripherals/dali.rst
+    - drivers/dali/
+    - dts/bindings/dali/
+    - include/zephyr/drivers/dali.h
+    - samples/drivers/dali/
+  labels:
+    - "area: DALI"
+
 "Drivers: DMA":
   status: maintained
   maintainers:
@@ -2310,6 +2326,7 @@ Documentation Infrastructure:
     - rerickson1
   collaborators:
     - SeppoTakalo
+    - zafersn
   files:
     - drivers/modem/
     - tests/drivers/build_all/modem/
@@ -3647,6 +3664,7 @@ Logging:
     - nordic-krch
   collaborators:
     - dcpleung
+    - ldab
   files:
     - include/zephyr/logging/
     - include/zephyr/sys/mpsc_pbuf.h
@@ -3836,6 +3854,7 @@ Microchip SAM Platforms:
     - stephanosio
   files:
     - boards/atmel/
+    - boards/microchip/sam/
     - dts/arm/atmel/
     - dts/arm/microchip/sam/
     - soc/atmel/
@@ -4928,12 +4947,13 @@ RISCV arch:
   collaborators:
     - edersondisouza
     - katsuster
-    - masz-nordic
     - mgielda
     - npitre
     - VynDragon
     - ycsin
     - maass-hamburg
+    - lstnl
+    - meijemac
   files:
     - arch/riscv/
     - boards/enjoydigital/litex_vexriscv/
@@ -4942,6 +4962,7 @@ RISCV arch:
     - boards/sifive/
     - boards/sparkfun/red_v_things_plus/
     - boards/starfive/
+    - cmake/compiler/*/target_riscv.cmake
     - doc/hardware/arch/risc-v.rst
     - drivers/interrupt_controller/intc_plic.c
     - drivers/interrupt_controller/intc_riscv_imsic.c
@@ -6529,12 +6550,14 @@ West:
     - mif1-nordic
     - adamkondraciuk
     - lstnl
+    - meijemac
     - rlubos
     - "57300"
     - jonathannilsen
     - karstenkoenig
     - SebastianBoe
     - kyberdin
+    - mstasiaknordic
   files:
     - modules/hal_nordic/
   labels:
@@ -6859,7 +6882,7 @@ West:
     - ithinuel
   files:
     - modules/mbedtls/
-    - tests/crypto/mbedtls_psa/
+    - tests/crypto/psa/
     - tests/crypto/secp256r1/
     - tests/benchmarks/mbedtls/
   labels:
@@ -7296,6 +7319,7 @@ nRF Platforms:
     - magp-nordic
     - nika-nordic
     - lstnl
+    - mstasiaknordic
   files:
     - boards/nordic/
     - drivers/*/*nrf*.c

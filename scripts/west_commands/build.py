@@ -17,7 +17,14 @@ from west.configuration import config
 from west.util import WestNotFound, west_topdir
 from west.version import __version__
 
-from build_helpers import FIND_BUILD_DIR_DESCRIPTION, find_build_dir, is_zephyr_build, load_domains
+from build_helpers import (
+    BUILD_HELPERS_LOGGER,
+    FIND_BUILD_DIR_DESCRIPTION,
+    find_build_dir,
+    forward_logging_to_west,
+    is_zephyr_build,
+    load_domains,
+)
 from zcmake import DEFAULT_CMAKE_GENERATOR, CMakeCache, run_build, run_cmake
 from zephyr_ext_common import Forceable
 
@@ -213,6 +220,9 @@ class Build(Forceable):
     def do_run(self, args, remainder):
         self.args = args        # Avoid having to pass them around
         self.config_board = config_get('board', None)
+        # Forward debug output from the build_helpers/zcmake module
+        # loggers so it is visible under "west -v" / "west -vv".
+        forward_logging_to_west(self, [BUILD_HELPERS_LOGGER, 'zcmake'])
         self.dbg(f'args: {args} remainder: {remainder}',
                 level=Verbosity.DBG_EXTREME)
         # Store legacy -s option locally
@@ -278,18 +288,7 @@ class Build(Forceable):
 
         # Parse test definition file for additional options.
         if self.args.test_item:
-            # we get path + testitem
-            item = os.path.basename(self.args.test_item)
-            if self.args.source_dir:
-                test_path = self.args.source_dir
-            else:
-                test_path = os.path.dirname(self.args.test_item)
-            if test_path and os.path.exists(test_path):
-                self.args.source_dir = test_path
-                if not self._parse_test_item(item, board):
-                    self.die("No test metadata found")
-            else:
-                self.die("test item path does not exist")
+            self._resolve_test_item(board)
 
         self._run_cmake(board, origin)
         if args.cmake_only:
@@ -354,6 +353,23 @@ class Build(Forceable):
             return elem[2]
         else:
             return arg
+
+    def _resolve_test_item(self, board):
+        """Resolve --test-item: derive source_dir from the test path and
+        parse sample/testcase YAML metadata for additional build options.
+        """
+        item = os.path.basename(self.args.test_item)
+        if self.args.source_dir:
+            test_path = self.args.source_dir
+        else:
+            test_path = os.path.dirname(self.args.test_item)
+        if test_path and os.path.exists(test_path):
+            self.args.source_dir = test_path
+            self.source_dir = os.path.abspath(test_path)
+            if not self._parse_test_item(item, board):
+                self.die("No test metadata found")
+        else:
+            self.die("test item path does not exist")
 
     def _parse_test_item(self, test_item, board):
         found_test_metadata = False
@@ -740,7 +756,7 @@ class Build(Forceable):
         if self.args.build_opt:
             extra_args.append('--')
             extra_args.extend(self.args.build_opt)
-        if self.args.verbose:
+        if self.verbosity >= Verbosity.DBG:
             self._append_verbose_args(extra_args,
                                       not bool(self.args.build_opt))
 
