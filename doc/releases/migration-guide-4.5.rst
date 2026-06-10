@@ -32,6 +32,18 @@ Kernel
 * ``_k_neg_eagain`` has been renamed to ``_errno_neg_egain`` as ``errno`` has been migrated out of
   kernel into ``lib/libc/common``.
 
+* When :kconfig:option:`CONFIG_SCHED_CPU_MASK_PIN_ONLY` is enabled, calling
+  :c:func:`k_thread_cpu_mask_clear`, :c:func:`k_thread_cpu_mask_enable_all`,
+  or :c:func:`k_thread_cpu_mask_disable` now triggers an assertion instead of
+  silently producing an invalid state.  Applications using these functions
+  in PIN_ONLY mode must be updated to use :c:func:`k_thread_cpu_pin` instead.
+
+* :kconfig:option:`CONFIG_SCHED_CPU_MASK` is no longer restricted to
+  :kconfig:option:`CONFIG_SCHED_SIMPLE`.  Projects that previously selected
+  ``SCHED_SCALABLE`` or ``SCHED_MULTIQ`` and worked around the limitation by
+  keeping ``SCHED_SIMPLE`` for affinity purposes can now use their preferred
+  backend directly.
+
 Boards
 ******
 
@@ -113,6 +125,17 @@ ADC
   replaced by encoded ``girqs`` (using ``MCHP_XEC_ECIA_GIRQ_ENC`` macros) and ``pcr-scr`` (int type)
   for encoded PCR register index and bit position (:github:`105658`).
 
+Audio Codec
+===========
+
+* The audio codec driver backend API now uses :c:struct:`audio_codec_driver_api` instead of
+  ``struct audio_codec_api``.
+
+  Out-of-tree audio codec drivers must rename their backend API struct definitions and switch
+  their API instances to ``DEVICE_API(audio_codec, ...)``. See :github:`110631` for examples of how
+  in-tree drivers have been updated. Application code using the ``audio_codec_...`` APIs is not
+  impacted.
+
 Clock Control
 =============
 
@@ -160,6 +183,13 @@ Display
   on the SDL pseudo-device node using the PANEL_PIXEL_FORMAT_* macros from
   :zephyr_file:`include/zephyr/dt-bindings/display/panel.h`. (:github:`104099`)
 
+* The LVGL ``CONFIG_LV_Z_COLOR_24_BGR_TO_RGB`` Kconfig option has been removed. LVGL's RGB888 color
+  format stores bytes in memory as blue, green, red, which matches the in-memory layout of
+  :c:enumerator:`PIXEL_FORMAT_RGB_888`, so no channel swap is performed for displays reporting that
+  format. Displays whose framebuffer instead expects a red, green, blue byte order must now report
+  :c:enumerator:`PIXEL_FORMAT_BGR_888`, for which the LVGL glue performs the red/blue channel swap
+  automatically.
+
 DMA
 ===
 
@@ -206,6 +236,20 @@ Ethernet
   :dtcompatible:`zephyr,native-ptp-clock` has been added for the native_sim PTP clock driver.
   :kconfig:option:`CONFIG_PTP_CLOCK_NATIVE` is enabled by default when the
   :dtcompatible:`zephyr,native-ptp-clock` compatible is present.
+
+* ``port_phylink_change`` of the :c:struct:`dsa_api` is now optional.
+  The DSA driver no longer needs to call :c:func:`net_eth_carrier_on` or
+  :c:func:`net_eth_carrier_off` on PHY link change, this is now handled by the DSA core.
+  The ``void *user_data`` argument of ``port_phylink_change`` has been changed to
+  ``const struct device *dev``, so it no longer needs to be cast to obtain the device pointer.
+  Out-of-tree DSA drivers must update their ``port_phylink_change`` callback to match the new API and
+  can remove any calls to :c:func:`net_eth_carrier_on` or :c:func:`net_eth_carrier_off` from it.
+  (:github:`109671`)
+
+* The MAC address of ethernet interfaces is now checked for validity, when bringing the interface up
+  with :c:func:`net_if_up`. If the MAC address is invalid, the interface will fail to come up and an
+  error will be logged. This check is done before the ``start`` function of the
+  :c:struct:`ethernet_api` is called. This also applies to native wifi drivers. (:github:`110435`)
 
 Flash
 =====
