@@ -168,11 +168,11 @@ manifest:
         - hal
     - name: hal_bouffalolab
       path: modules/hal/bouffalolab
-      revision: 6f8ee38a67b5c4a9f0b6e395d9c363fc920182a0
+      revision: f011e4337fa79e28a3d784003d8a1bcf883eb75b
       groups:
         - hal
     - name: hal_espressif
-      revision: 047d4547aeba0e2280610c6bdfc3058df0c61c80
+      revision: f3be21f2bb27535d4ac58364018cb6491d52f5dd
       path: modules/hal/espressif
       west-commands: west/west-commands.yml
       groups:
@@ -188,7 +188,7 @@ manifest:
       groups:
         - hal
     - name: hal_infineon
-      revision: d9e6846717489b75ebc51c9ccac8ddc650d2a32f
+      revision: dca66de9669d20c3d6b2e86881d205baf8dd5c88
       path: modules/hal/infineon
       groups:
         - hal
@@ -203,7 +203,7 @@ manifest:
       groups:
         - hal
     - name: hal_nordic
-      revision: 1a6de0af0a0e5f65b88d52df006aa8cdf29fe92f
+      revision: 19f742b45acb7e660ed3673cab819c103de5e856
       path: modules/hal/nordic
       groups:
         - hal
@@ -213,7 +213,7 @@ manifest:
       groups:
         - hal
     - name: hal_nxp
-      revision: 0f7ae59e08fc5a0c43561c495488483aa506ab4e
+      revision: 113fb585480b38d1d746db4c320b70beb13036e5
       path: modules/hal/nxp
       groups:
         - hal
@@ -248,7 +248,7 @@ manifest:
       groups:
         - hal
     - name: hal_silabs
-      revision: 12a1d77c7f8ff4d18b6ed1ace6da07e76aaa789f
+      revision: 030242dfa7e0649ff7fe764899c498f1e2c68f15
       path: modules/hal/silabs
       groups:
         - hal
@@ -321,7 +321,7 @@ manifest:
       revision: fb00b383072518c918e2258b0916c996f2d4eebe
       path: modules/lib/loramac-node
     - name: lvgl
-      revision: 85aa60d18b3d5e5588d7b247abf90198f07c8a63
+      revision: bbedf2656086a93a8468a1c98168a6b36631ce9a
       path: modules/lib/gui/lvgl
     - name: mbedtls
       revision: 554163f6f7b2ec71fed9b423e81f2217a8615d29
@@ -399,7 +399,7 @@ manifest:
       groups:
         - tee
     - name: trusted-firmware-m
-      revision: ee0acbb142d27ea3eb829d8da217dfd41af462be
+      revision: 2fb1a713ec92222613987e068b00269963de1bef
       path: modules/tee/tf-m/trusted-firmware-m
       groups:
         - tee

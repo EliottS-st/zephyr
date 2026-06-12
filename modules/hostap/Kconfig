@@ -180,7 +180,6 @@ config WIFI_NM_WPA_SUPPLICANT_CRYPTO_ALT
 	select MBEDTLS_NIST_KW_C
 	select MBEDTLS_HAVE_ASM
 	select MBEDTLS_CTR_DRBG_C
-	select PSA_WANT_ALG_HMAC
 	select PSA_WANT_ALG_HKDF
 	select PSA_WANT_ALG_HKDF_EXTRACT
 	select PSA_WANT_ALG_HKDF_EXPAND
@@ -354,6 +353,13 @@ config WIFI_NM_WPA_SUPPLICANT_WPA3_COMMON
 	  WPA3/SAE is available (either internal or external implementation).
 	  Use this in code to gate WPA3 functionality regardless of backend.
 
+config WIFI_NM_WPA_SUPPLICANT_OWE
+	bool "OWE support in wpa_supplicant wrapper"
+	depends on WIFI_NM_WPA_SUPPLICANT_WPA3
+	depends on WIFI_NM_WPA_SUPPLICANT_WPA3_COMMON
+	help
+	  OWE support via the wpa_supplicant network manager.
+
 config WIFI_NM_WPA_SUPPLICANT_AP
 	bool "SoftAP mode support based on WPA supplicant"
 	default y if WIFI_USAGE_MODE_AP || WIFI_USAGE_MODE_STA_AP
@@ -463,6 +469,10 @@ config WIFI_NM_WPA_SUPPLICANT_DPP
 	select MBEDTLS_X509_CSR_PARSE_C
 	select MBEDTLS_ECP_NIST_OPTIM
 	select PSA_WANT_ECC_SECP_R1_384
+
+config WIFI_NM_WPA_SUPPLICANT_NAN
+	bool "NAN (Neighbor Awareness Networking) support"
+	depends on !WIFI_NM_WPA_SUPPLICANT_CRYPTO_NONE
 
 config WIFI_NM_WPA_SUPPLICANT_11AC
 	bool "IEEE 802.11ac VHT support"
@@ -650,6 +660,9 @@ config CRYPTO_INTERNAL
 config ECC
 	bool
 
+config OWE
+	bool
+
 config MBO
 	bool
 
@@ -700,6 +713,12 @@ config DPP2
 	bool
 
 config DPP3
+	bool
+
+config NAN
+	bool
+
+config NAN_USD
 	bool
 
 config ACS

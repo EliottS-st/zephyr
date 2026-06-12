@@ -93,6 +93,11 @@ Deprecated APIs and options
   * The :c:struct:`_dmic_ops` struct has been deprecated. DMIC drivers are now expected to use the
     :c:macro:`DEVICE_API` macro to declare their driver API.
 
+* Fuel Gauge
+
+  * Deprecated various fuel gauge property enums and union fields in favor of
+    new versions with explicit unit suffixes.
+
 * LoRa
 
   * Renamed :c:func:`lora_recv_duty_cycle` to :c:func:`lora_recv_duty_cycle_async`
@@ -136,6 +141,11 @@ New APIs and options
     * :c:func:`bt_ascs_register`
     * :c:func:`bt_ascs_unregister`
 
+  * Host
+
+    * :c:func:`bt_conn_take`
+    * :c:func:`bt_conn_drop`
+
   * Mesh
 
     * :c:struct:`bt_mesh_lpn_timing`
@@ -159,6 +169,10 @@ New APIs and options
   * :c:func:`haptics_select_source`
   * :c:func:`haptics_set_level`
   * :c:func:`haptics_stream_samples`
+
+* Kernel
+
+  * :c:func:`k_thread_runtime_stats_is_enabled`
 
 * LoRa
 
