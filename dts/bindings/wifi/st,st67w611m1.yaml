@@ -23,6 +23,3 @@ properties:
   boot-gpios:
     type: phandle-array
     required: true
-
-  spi-hold-cs:
-    required: true

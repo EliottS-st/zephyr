@@ -18,7 +18,11 @@ config WIFI_ST67W611M1
 	bool "ST67W611M1 Wi-Fi driver"
 	default y
 	select NET_L2_ETHERNET # Wifi driver is defined as an Ethernet interface
-	select WIFI_USE_NATIVE_NETWORKING # Sets net_wifi_mgmt_offload as an ethernet_api
+	select WIFI_USE_NATIVE_NETWORKING # Set net_wifi_mgmt_offload as an ethernet_api
+
+config ST67W611M1_SCAN_RESULT_MAX_NUMBER
+	int "Max number of scan results"
+	default 12
 
 config ST67W611M1_WORKQ_THREAD_PRIORITY
 	int "Priority of the work queue thread"
@@ -41,13 +45,18 @@ config ST67W611M1_SPI_PROCESSOR_THREAD_PRIORITY
 	default 8
 
 config ST67W611M1_SPI_PROCESSOR_THREAD_STACK_SIZE
-	int "Stack size of the SPI TX RX transfer thread`"
+	int "Stack size of the SPI TX RX transfer thread"
 	default 1024
 
-config HEAP_MEM_POOL_ADD_SIZE_SPI_PKT
-	int "SPI packet memory pool size"
-	default 1280
-	help
-		# Minimum system heap size for allocating spi_pkt objects embedding buffer ptr
+config ST67W611M1_TX_BUF_COUNT
+	int "Number of max len SPI frames that can fit in the TX message queue"
+	default 4
+
+config ST67W611M1_RX_BUF_COUNT
+	int "Number of max len AT cmds that can fit in the RX message queue"
+	default 4
+
+config NET_MGMT_EVENT_STACK_SIZE
+	default 2048
 
 endif # ST67W611M1

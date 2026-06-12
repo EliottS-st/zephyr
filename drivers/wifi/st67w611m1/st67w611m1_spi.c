@@ -7,20 +7,24 @@
 #define DT_DRV_COMPAT st_st67w611m1
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(wifi_st67w611m1_spi, CONFIG_WIFI_LOG_LEVEL);
+LOG_MODULE_REGISTER(st67w611m1_spi, CONFIG_WIFI_LOG_LEVEL);
 
 #include <errno.h>
-#include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/types.h>
 #include <zephyr/toolchain.h>
-#include <zephyr/kernel/thread_stack.h>
-#include <zephyr/sys/util_macro.h>
-#include <zephyr/sys/byteorder.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/spi.h>
+#include <zephyr/kernel/thread_stack.h>
+#include <zephyr/net_buf.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/sys/byteorder.h>
 
 #include "st67w611m1_spi.h"
 
@@ -39,22 +43,23 @@ static const struct st67_config st67_config = {
 	.ready = GPIO_DT_SPEC_GET(ST67_SPI_NODE, ready_gpios),
 	.chip_en = GPIO_DT_SPEC_GET(ST67_SPI_NODE, chip_en_gpios),
 	.boot = GPIO_DT_SPEC_GET(ST67_SPI_NODE, boot_gpios),
-	.spi = SPI_DT_SPEC_GET(ST67_SPI_NODE, SPI_WORD_SET(8) | SPI_TRANSFER_MSB),
+	.spi = SPI_DT_SPEC_GET(ST67_SPI_NODE, SPI_WORD_SET(8) | SPI_TRANSFER_MSB | SPI_LOCK_ON),
 };
 
-#define ST67_SPI_SYNC_WORD   0x55AA
-#define ST67_SPI_BUFFER_SIZE 1600
+#define ST67_SPI_SYNC_WORD 0x55AA
 
 struct st67_spi_context {
 	bool initialized;
 	bool ready_pin_previous_state;
-	struct k_event event;
-	struct k_queue txq;
-	struct k_queue rxq;
-	struct k_sem sem_rx_wait;
-};
 
-static uint8_t spi_buffer[ST67_SPI_BUFFER_SIZE];
+	struct k_event event;
+	struct k_fifo tx_fifo;
+	struct k_mutex spi_send_mutex;
+
+	drv_rx_iface_cb_t drv_rx_iface_cb[FRAME_TYPE_MAX];
+
+	uint8_t tx_temp_buf[ST67_SPI_BUFFER_SIZE_BYTES]; // TODO will be removed
+};
 
 static struct st67_spi_context spi_context = {
 	.initialized = false,
@@ -75,16 +80,6 @@ enum {
 	SPI_EVT_TX_PENDING = BIT(3),
 };
 
-struct spi_header {
-	uint16_t sync_word;
-	uint16_t data_length;
-	uint8_t frame; /* version (0:1); rx_stall(2); flags(3:7) */
-	uint8_t type;
-	uint16_t reserved;
-};
-
-BUILD_ASSERT(sizeof(struct spi_header) == 8, "spi_header struct should be 8 bytes long!");
-
 #define ST67_SPI_HEADER_VERSION_SHIFT 0
 #define ST67_SPI_HEADER_VERSION_MASK  BIT_MASK(2)
 #define ST67_SPI_HEADER_VERSION_GET(x)                                                             \
@@ -100,45 +95,112 @@ BUILD_ASSERT(sizeof(struct spi_header) == 8, "spi_header struct should be 8 byte
 #define ST67_SPI_HEADER_FLAGS_GET(x)                                                               \
 	(((x) >> ST67_SPI_HEADER_FLAGS_SHIFT) & ST67_SPI_HEADER_FLAGS_MASK)
 
-void spi_wait_for_rx(void)
-{
-	k_sem_take(&spi_context.sem_rx_wait, K_FOREVER);
-}
+static uint8_t spi_buffer[ST67_SPI_BUFFER_SIZE_BYTES] __nocache;
 
-struct spi_pkt {
-	void *queue_reserved;
-	const uint8_t *buf;
-	size_t len;
-};
+RING_BUF_DECLARE(tx_ring_buf, ST67_SPI_BUFFER_SIZE_BYTES *CONFIG_ST67W611M1_TX_BUF_COUNT);
+K_MEM_SLAB_DEFINE(tx_fifo_item_slab, sizeof(struct fifo_item), 50, 4);
 
-int st67_spi_send(const uint8_t *buf, size_t len)
+#define ST67W611M1_SEND_MUTEX_WAIT K_SECONDS(5)
+
+int st67_spi_send_bytes(const uint8_t *buf, size_t len)
 {
+	int ret;
+
+	ret = k_mutex_lock(&spi_context.spi_send_mutex, ST67W611M1_SEND_MUTEX_WAIT);
+	if (ret < 0) {
+		return ret;
+	}
+
 	if (!buf) {
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
 
 	if (!spi_context.initialized) {
 		LOG_ERR("SPI not initialized");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
 
-	struct spi_pkt *pkt =
-		k_malloc(sizeof(struct spi_pkt)); /* Freed at the end of st67_spi_process() */
-	if (!pkt) {
-		return -ENOMEM;
+	if (len > ring_buf_space_get(&tx_ring_buf)) {
+		ret = -ENOMEM;
+		goto out;
 	}
-	pkt->buf = buf;
-	pkt->len = len;
 
-	k_queue_append(&spi_context.txq, pkt);
+	struct fifo_item *fifo_item;
+	ret = k_mem_slab_alloc(&tx_fifo_item_slab, (void **)&fifo_item,
+			       K_NO_WAIT); /* Freed at the end of st67_spi_process() */
+	if (ret < 0) {
+		LOG_ERR("tx fifo slab full");
+		goto out;
+	}
+
+	ring_buf_put(&tx_ring_buf, buf, len);
+
+	fifo_item->len = len;
+	fifo_item->type = AT_CMD;
+
+	k_fifo_put(&spi_context.tx_fifo, fifo_item);
 	k_event_post(&spi_context.event, SPI_EVT_TX_PENDING);
 
-	return 0;
+out:
+	k_mutex_unlock(&spi_context.spi_send_mutex);
+	return ret;
 }
 
-int st67_spi_receive(uint8_t *buf, size_t len)
+int st67_spi_send_net_pkt(struct net_pkt *pkt)
 {
-	return 0;
+	int ret;
+
+	ret = k_mutex_lock(&spi_context.spi_send_mutex, ST67W611M1_SEND_MUTEX_WAIT);
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (!pkt) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (!spi_context.initialized) {
+		LOG_ERR("SPI not initialized");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	size_t pkt_len = net_pkt_get_len(pkt);
+
+	if (pkt_len > ring_buf_space_get(&tx_ring_buf)) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	struct fifo_item *fifo_item;
+	ret = k_mem_slab_alloc(&tx_fifo_item_slab, (void **)&fifo_item,
+			       K_NO_WAIT); /* Freed at the end of st67_spi_process() */
+	if (ret < 0) {
+		LOG_ERR("tx fifo slab full");
+		goto out;
+	}
+
+	size_t copied = net_buf_linearize(spi_context.tx_temp_buf, sizeof(spi_context.tx_temp_buf),
+					  pkt->buffer, 0, pkt_len);
+	if (copied != pkt_len) {
+		ret = -EIO;
+		goto out;
+	}
+
+	ring_buf_put(&tx_ring_buf, spi_context.tx_temp_buf, pkt_len);
+
+	fifo_item->len = pkt_len;
+	fifo_item->type = STA_DATA;
+
+	k_fifo_put(&spi_context.tx_fifo, fifo_item);
+	k_event_post(&spi_context.event, SPI_EVT_TX_PENDING);
+
+out:
+	k_mutex_unlock(&spi_context.spi_send_mutex);
+	return ret;
 }
 
 static void write_spi_header_to_buffer(size_t len, uint8_t type)
@@ -174,7 +236,7 @@ static int parse_spi_header(struct rx_header *out)
 	return 0;
 }
 
-static void st67_spi_txrx(size_t xfer_len, size_t offset)
+static int st67_spi_txrx(size_t xfer_len, size_t offset)
 {
 	struct spi_buf tx_buf = {
 		.buf = &spi_buffer[offset],
@@ -193,7 +255,7 @@ static void st67_spi_txrx(size_t xfer_len, size_t offset)
 		.count = 1,
 	};
 
-	spi_transceive_dt(&st67_config.spi, &tx_buf_set, &rx_buf_set);
+	return spi_transceive_dt(&st67_config.spi, &tx_buf_set, &rx_buf_set);
 }
 
 #define ST67_SPI_BUF_ALIGN_MASK 0x3
@@ -203,28 +265,30 @@ static int st67_spi_process()
 	int ret = 0;
 	size_t pkt_len = 0;
 	size_t first_xfer_len = 0;
-	size_t second_xfer_len = 0;
 
-	/* Prepare TX */
-	struct spi_pkt *pkt = k_queue_get(&spi_context.txq, K_NO_WAIT);
+	struct fifo_item *tx_fifo_item = k_fifo_get(&spi_context.tx_fifo, K_NO_WAIT);
 
-	if (!pkt) { /* Nothing to say */
+	if (!tx_fifo_item) { /* Nothing to say */
 		write_spi_header_to_buffer(0, 0);
 	} else {
-		pkt_len = pkt->len;
-		if (pkt_len + sizeof(struct spi_header) > ST67_SPI_BUFFER_SIZE) {
+		pkt_len = tx_fifo_item->len;
+		if (pkt_len + sizeof(struct spi_header) > ST67_SPI_BUFFER_SIZE_BYTES) {
 			ret = -EMSGSIZE;
 			goto out;
 		}
-		write_spi_header_to_buffer(pkt_len, 0);
-		memcpy(spi_buffer + sizeof(struct spi_header), pkt->buf, pkt_len);
+		write_spi_header_to_buffer(pkt_len, tx_fifo_item->type);
+		ring_buf_get(&tx_ring_buf, spi_buffer + sizeof(struct spi_header), pkt_len);
 	}
 
+	/* Add mod4 payload padding to transfered length. */
 	first_xfer_len = (pkt_len + sizeof(struct spi_header) + ST67_SPI_BUF_ALIGN_MASK) &
 			 ~ST67_SPI_BUF_ALIGN_MASK;
 
-	/* Start sending TX and receive RX header on spi_buffer (for RX len). */
-	st67_spi_txrx(first_xfer_len, 0);
+	/* Actual SPI transfer */
+	ret = st67_spi_txrx(first_xfer_len, 0);
+	if (ret < 0) {
+		goto out;
+	}
 
 	struct rx_header rx_header;
 	ret = parse_spi_header(&rx_header);
@@ -234,22 +298,44 @@ static int st67_spi_process()
 
 	/* TODO handle rx stall */
 
-	/* Determine remaining len. */
-	/* If rx is bigger than tx */
-	if ((size_t)rx_header.data_length > first_xfer_len - sizeof(struct spi_header)) {
-		second_xfer_len = (size_t)rx_header.data_length;
-	} else {
-		second_xfer_len = pkt_len - (first_xfer_len - sizeof(struct spi_header));
+	/* 2nd transaction can be necessary if RX len > TX len. */
+	size_t second_xfer_len = 0;
+	size_t rx_data_length = (size_t)rx_header.data_length;
+	enum st67_spi_frame_type rx_type = rx_header.type;
+	size_t first_payload_len = first_xfer_len - sizeof(struct spi_header);
+
+	if (rx_data_length > first_payload_len) {
+		second_xfer_len = (rx_data_length - first_payload_len + ST67_SPI_BUF_ALIGN_MASK) &
+				  ~ST67_SPI_BUF_ALIGN_MASK;
+		if (first_xfer_len + second_xfer_len > ST67_SPI_BUFFER_SIZE_BYTES) {
+			ret = -EMSGSIZE;
+			goto out;
+		}
+		ret = st67_spi_txrx(second_xfer_len, first_xfer_len);
+		if (ret < 0) {
+			goto out;
+		}
 	}
 
-	if (second_xfer_len > 0) {
-		second_xfer_len =
-			(second_xfer_len + ST67_SPI_BUF_ALIGN_MASK) & ~ST67_SPI_BUF_ALIGN_MASK;
-		st67_spi_txrx(second_xfer_len, first_xfer_len);
+	if (rx_data_length > 0) {
+		if (rx_type >= FRAME_TYPE_MAX) {
+			LOG_DBG("Unexpected frame type %d", rx_type);
+			goto out;
+		}
+		if (!spi_context.drv_rx_iface_cb[rx_type]) {
+			LOG_DBG("NULL cb");
+			goto out;
+		}
+
+		spi_context.drv_rx_iface_cb[rx_type](spi_buffer + sizeof(struct spi_header),
+						     rx_data_length);
 	}
 
 out:
-	k_free(pkt);
+	spi_release_dt(&st67_config.spi);
+	if (tx_fifo_item) {
+		k_mem_slab_free(&tx_fifo_item_slab, tx_fifo_item);
+	}
 	return ret;
 }
 
@@ -273,10 +359,7 @@ static void st67_spi_processor(void *p1, void *p2, void *p3)
 			k_event_wait_safe(&spi_context.event, SPI_EVT_ST67_READY, false, K_FOREVER);
 		}
 
-		ret = st67_spi_process();
-		if (ret < 0) {
-			LOG_ERR("got %d", ret);
-		}
+		st67_spi_process();
 
 		k_event_wait_safe(&spi_context.event, SPI_EVT_ST67_ACK, false, K_FOREVER);
 
@@ -284,8 +367,6 @@ static void st67_spi_processor(void *p1, void *p2, void *p3)
 		if (ret < 0) {
 			LOG_ERR("Cannot unset CS");
 		}
-
-		// k_event_clear(&spi_context.event, ~0); // TODO might do something like this
 	}
 }
 
@@ -313,7 +394,6 @@ int st67_spi_init(void)
 {
 	int ret;
 
-	/* GPIO */
 	if (!gpio_is_ready_dt(&st67_config.chip_select) || !gpio_is_ready_dt(&st67_config.ready) ||
 	    !gpio_is_ready_dt(&st67_config.chip_en) || !gpio_is_ready_dt(&st67_config.boot) ||
 	    !spi_is_ready_dt(&st67_config.spi)) {
@@ -350,11 +430,10 @@ int st67_spi_init(void)
 		goto out;
 	}
 
-	/* event, queues, sem etc. */
+	/* event, fifos, sem etc. */
 	k_event_init(&spi_context.event);
-	k_queue_init(&spi_context.txq);
-	k_queue_init(&spi_context.rxq);
-	k_sem_init(&spi_context.sem_rx_wait, 0, 1);
+	k_fifo_init(&spi_context.tx_fifo);
+	k_mutex_init(&spi_context.spi_send_mutex);
 
 	/* SPI processing thread */
 	k_thread_create(&st67_spi_processor_thread, st67_spi_processor_stack,
@@ -363,7 +442,10 @@ int st67_spi_init(void)
 			K_NO_WAIT);
 	k_thread_name_set(&st67_spi_processor_thread, "st67_spi_process_thread");
 
-	/* Start ST67W611M1 */
+	/* Give some time to ST67 before power on. */
+	k_sleep(K_MSEC(1));
+
+	/* Start ST67W611M1. */
 	ret = gpio_pin_set_dt(&st67_config.chip_en, 1);
 	if (ret < 0) {
 		goto out;
@@ -373,4 +455,14 @@ int st67_spi_init(void)
 
 out:
 	return ret;
+}
+
+void st67_spi_register_drv_rx_iface_cb(drv_rx_iface_cb_t cb, enum st67_spi_frame_type type)
+{
+	if (type >= FRAME_TYPE_MAX) {
+		LOG_DBG("Unexpected frame type %d", type);
+		return;
+	}
+
+	spi_context.drv_rx_iface_cb[type] = cb;
 }

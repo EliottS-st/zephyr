@@ -12,20 +12,43 @@ extern "C" {
 #endif
 
 #include <zephyr/types.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/net/net_pkt.h>
 
-enum st67_spi_frame_type {
-	at_cmd = 0x00,
-	sta_data = 0x01,
-	ap_data = 0x02,
+#define ST67W611M1_SPI_MTU_BYTES   1520
+#define ST67_SPI_BUFFER_SIZE_BYTES (ST67W611M1_SPI_MTU_BYTES + sizeof(struct spi_header))
+
+struct spi_header {
+	uint16_t sync_word;
+	uint16_t data_length;
+	uint8_t frame; /* version (0:1); rx_stall(2); flags(3:7) */
+	uint8_t type;
+	uint16_t reserved;
 };
 
-void spi_wait_for_rx(void);
+enum st67_spi_frame_type {
+	AT_CMD = 0x00,
+	STA_DATA = 0x01,
+	SAP_DATA = 0x02,
+	FRAME_TYPE_MAX,
+};
 
-int st67_spi_send(const uint8_t *buf, size_t len);
+BUILD_ASSERT(sizeof(struct spi_header) == 8, "spi_header struct should be 8 bytes long!");
 
-int st67_spi_receive(uint8_t *buf, size_t len);
+struct fifo_item {
+	void *fifo_reserved;
+	size_t len;
+	enum st67_spi_frame_type type;
+};
+
+typedef void (*drv_rx_iface_cb_t)(const uint8_t *buf, size_t len);
+
+int st67_spi_send_bytes(const uint8_t *buf, size_t len);
+int st67_spi_send_net_pkt(struct net_pkt *pkt);
 
 int st67_spi_init(void);
+
+void st67_spi_register_drv_rx_iface_cb(drv_rx_iface_cb_t cb, enum st67_spi_frame_type type);
 
 #ifdef __cplusplus
 }
