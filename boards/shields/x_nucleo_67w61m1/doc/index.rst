@@ -37,6 +37,13 @@ tools included in the official `X-CUBE-ST67W61 Package`_ is necessary to flash
 the correct firmware. Please refer to `ST67W611M1 Hardware setup`_ and
 `X-CUBE-ST67W61 Architecture`_.
 
+A flashing script is included in the X-CUBE package:
+
+.. code-block:: shell
+
+   cd x-cube-st67w61/Projects/ST67W6X_Scripts/Binaries/
+   ./NCP_update_mission_profile_t02.sh
+
 Programming
 ***********
 
