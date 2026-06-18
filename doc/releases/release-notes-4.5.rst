@@ -173,6 +173,7 @@ New APIs and options
 * Kernel
 
   * :c:func:`k_thread_runtime_stats_is_enabled`
+  * :c:func:`atomic_test_and_set_bit_to`
 
 * LoRa
 
@@ -222,6 +223,10 @@ New Drivers
 
   * Diodes/Pericom PI4IOE5V6408 8-bit I2C-bus I/O expander
     (:dtcompatible:`diodes,pi4ioe5v6408`).
+
+* Input
+
+  * VIRTIO input device (:dtcompatible:`virtio,input`).
 
 New Samples
 ***********
