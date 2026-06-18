@@ -21,10 +21,17 @@
 extern "C" {
 #endif
 
-#define ST67W611M1_AT_CMD_TIMEOUT K_SECONDS(5)
-#define ST67W611M1_SCAN_TIMEOUT   K_SECONDS(10)
+#define ST67W611M1_ETH_MTU 1500
 
 #define ST67W611M1_AT_CMD_MAX_LEN 256
+
+#define ST67W611M1_AT_CMD_TIMEOUT        K_SECONDS(5)
+#define ST67W611M1_INIT_TIMEOUT          K_SECONDS(10)
+#define ST67W611M1_SCAN_TIMEOUT          K_SECONDS(10)
+#define ST67W611M1_NET_PKT_ALLOC_TIMEOUT K_SECONDS(5)
+
+#define ST67W611M1_CWNETMODE_T01_VAL 1
+#define ST67W611M1_CWNETMODE_T02_VAL 0
 
 #define ST67W611M1_CWLAPOPT_CMD                                                                    \
 	"AT+CWLAPOPT=1,31,-100,255," STRINGIFY(CONFIG_ST67W611M1_SCAN_RESULT_MAX_NUMBER) "\r\n"
@@ -79,11 +86,11 @@ struct st67_data {
 	struct k_sem sem_wifi_scan_done_wait;
 	struct k_sem sem_rx_wait;
 
-	struct k_fifo rx_fifo;
-
 	uint8_t sta_mac_address[NET_ETH_ADDR_LEN];
 
 	enum st67_sta_current_state sta_current_state;
+
+	bool is_supported_st67_firmware_detected;
 };
 
 #ifdef __cplusplus

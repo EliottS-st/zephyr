@@ -14,8 +14,9 @@ LOG_MODULE_REGISTER(st67w611m1, CONFIG_WIFI_LOG_LEVEL);
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/types.h>
 #include <zephyr/kernel/thread_stack.h>
 #include <zephyr/net/ethernet.h>
@@ -26,6 +27,7 @@ LOG_MODULE_REGISTER(st67w611m1, CONFIG_WIFI_LOG_LEVEL);
 #include <zephyr/net/net_linkaddr.h>
 #include <zephyr/net/wifi.h>
 #include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/sys/printk.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/sys/util.h>
 
@@ -35,21 +37,16 @@ LOG_MODULE_REGISTER(st67w611m1, CONFIG_WIFI_LOG_LEVEL);
 #include "st67w611m1_drv.h"
 #include "st67w611m1_spi.h"
 
-#define ST67W611M1_ETH_MTU 1500
-
-#define ST67W611M1_INIT_TIMEOUT          K_SECONDS(10)
-#define ST67W611M1_NET_PKT_ALLOC_TIMEOUT K_SECONDS(5)
-
-NET_BUF_POOL_DEFINE(mdm_recv_pool, CONFIG_ST67W611M1_RX_BUF_COUNT, ST67W611M1_AT_CMD_MAX_LEN, 0,
-		    NULL);
-
 K_KERNEL_STACK_DEFINE(st67_workq_stack, CONFIG_ST67W611M1_WORKQ_STACK_SIZE);
-K_KERNEL_STACK_DEFINE(st67_rx_stack, CONFIG_ST67W611M1_RX_THREAD_STACK_SIZE);
+K_KERNEL_STACK_DEFINE(st67_at_rx_stack, CONFIG_ST67W611M1_RX_THREAD_STACK_SIZE);
 
-RING_BUF_DECLARE(rx_ring_buf, ST67W611M1_AT_CMD_MAX_LEN *CONFIG_ST67W611M1_RX_BUF_COUNT);
-K_MEM_SLAB_DEFINE(rx_fifo_item_slab, sizeof(struct fifo_item), 50, 4);
+NET_BUF_POOL_DEFINE(at_cmd_net_buf_pool, CONFIG_ST67W611M1_TX_AT_CMD_NET_BUF_POOL_COUNT,
+		    CONFIG_ST67W611M1_TX_AT_CMD_NET_BUF_POOL_SIZE, 0, NULL);
+NET_PKT_SLAB_DEFINE(at_cmd_net_pkt_slab, CONFIG_ST67W611M1_TX_AT_CMD_NET_PKT_SLAB_COUNT);
 
-static struct k_thread st67_rx_thread;
+RING_BUF_DECLARE(rx_at_cmd_ring_buf, CONFIG_ST67W611M1_RX_AT_CMD_RING_BUF_SIZE);
+
+static struct k_thread st67_at_rx_thread;
 
 static struct st67_data driver_data;
 
@@ -61,48 +58,71 @@ static inline int st67_send_at_cmd(struct st67_data *st67_data,
 			      handler_cmds_len, buf, &st67_data->sem_cmd_response_wait, timeout);
 }
 
-/* Callback used by the modem cmd handler (read) */
+/* modem_cmd_handler read cb */
 static int st67_receive_at_cmd_from_bus(struct modem_iface *iface, uint8_t *buf, size_t size,
 					size_t *bytes_read)
 {
-	int ret = 0;
-
 	if (!buf) {
 		return -EINVAL;
 	}
 
-	/* Removed later from fifo in case dest buffer is too small (AT buffer for raw data for
-	 * example). */
-	struct fifo_item *fifo_item = k_fifo_peek_head(&driver_data.rx_fifo);
-	if (!fifo_item) {
-		return -EAGAIN;
+	size_t available_len = ring_buf_size_get(&rx_at_cmd_ring_buf);
+	if (available_len > size) {
+		available_len = size;
 	}
 
-	if (fifo_item->len > size) {
-		ret = -EINVAL;
-		goto out;
-	}
+	*bytes_read = ring_buf_get(&rx_at_cmd_ring_buf, buf, available_len);
 
-	*bytes_read = ring_buf_get(&rx_ring_buf, buf, fifo_item->len);
-
-	/* Remove from fifo. */
-	if (!k_fifo_get(&driver_data.rx_fifo, K_NO_WAIT)) {
-		return -EFAULT;
-	}
-
-out:
-	k_mem_slab_free(&rx_fifo_item_slab, fifo_item);
-	return ret;
+	return 0;
 }
 
-/* Callback used by the modem cmd handler (write) */
+static struct net_pkt *alloc_net_pkt_and_copy_buf(const uint8_t *buf, size_t len)
+{
+	struct net_pkt *pkt;
+	struct net_buf *net_buf;
+	pkt = net_pkt_alloc_from_slab(&at_cmd_net_pkt_slab, ST67W611M1_NET_PKT_ALLOC_TIMEOUT);
+	if (!pkt) {
+		return NULL;
+	}
+
+	net_buf = net_pkt_get_reserve_data(&at_cmd_net_buf_pool, len,
+					   ST67W611M1_NET_PKT_ALLOC_TIMEOUT);
+	if (!net_buf) {
+		net_pkt_unref(pkt);
+		return NULL;
+	}
+
+	net_buf_add_mem(net_buf, buf, len);
+	net_pkt_append_buffer(pkt, net_buf);
+
+	return pkt;
+}
+
+/* modem_cmd_handler write cb  */
 static int st67_send_at_cmd_to_bus(struct modem_iface *iface, const uint8_t *buf, size_t size)
 {
 	if (!buf) { /* Empty EOL from cmd_handler */
 		return 0;
 	}
-	int ret = st67_spi_send_bytes(buf, size);
+
+	struct net_pkt *net_pkt = alloc_net_pkt_and_copy_buf(buf, size);
+	if (!net_pkt) {
+		return -ENOMEM;
+	}
+
+	struct st67_spi_pkt *spi_pkt = k_malloc(sizeof(struct st67_spi_pkt));
+	if (!spi_pkt) {
+		net_pkt_unref(net_pkt);
+		return -ENOMEM;
+	}
+
+	spi_pkt->net_pkt = net_pkt;
+	spi_pkt->type = AT_CMD;
+
+	int ret = st67_spi_send(spi_pkt);
 	if (ret < 0) {
+		net_pkt_unref(net_pkt);
+		k_free(spi_pkt);
 		LOG_ERR("can't send to SPI: %d", ret);
 		return ret;
 	}
@@ -272,7 +292,7 @@ static int st67_disconnect(const struct device *dev, struct net_if *iface)
 	return 0;
 }
 
-static void st67_rx(void *p1, void *p2, void *p3)
+static void st67_at_rx(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
@@ -341,6 +361,31 @@ MODEM_CMD_DEFINE(on_cmd_cipstamac)
 	ret = net_bytes_from_str(st67_data->sta_mac_address, ARRAY_SIZE(st67_data->sta_mac_address),
 				 mac);
 	return ret;
+}
+
+MODEM_CMD_DEFINE(on_cmd_cwnetmode)
+{
+	struct st67_data *st67_data = CONTAINER_OF(data, struct st67_data, cmd_handler_data);
+	st67_data->is_supported_st67_firmware_detected = false;
+
+	if (argc < 1) {
+		LOG_ERR("Cannot determine firmware version");
+		return -EINVAL;
+	}
+	int val = strtol(argv[0], NULL, 10);
+
+	switch (val) {
+	case ST67W611M1_CWNETMODE_T02_VAL:
+		st67_data->is_supported_st67_firmware_detected = true;
+		return 0;
+	case ST67W611M1_CWNETMODE_T01_VAL:
+		LOG_ERR("ST67W611M1 T01 firmware not supported. Please flash the T02 firmware.");
+		return -ENODEV;
+	default:
+		LOG_ERR("Unknown ST67W611M1 firmware.");
+
+		return -ENODEV;
+	}
 }
 
 MODEM_CMD_DEFINE(on_cmd_wifi_scan_done)
@@ -528,26 +573,16 @@ static const struct modem_cmd unsol_cmds[] = {
 
 static void handle_at_cmd_frame(const uint8_t *buf, size_t len)
 {
-	struct fifo_item *fifo_item;
+	struct st67_data *st67_data = &driver_data;
 
-	if (len > ring_buf_space_get(&rx_ring_buf)) {
-		LOG_ERR("rx ring buff too small");
+	if (len > ring_buf_space_get(&rx_at_cmd_ring_buf)) {
+		LOG_ERR("Not enough space in RX AT cmd ring buf");
 		return;
 	}
 
-	/* Freed at the end of st67_receive_from_bus() */
-	if (k_mem_slab_alloc(&rx_fifo_item_slab, (void **)&fifo_item, K_NO_WAIT) != 0) {
-		LOG_ERR("rx fifo slab full");
-		return;
-	}
+	ring_buf_put(&rx_at_cmd_ring_buf, buf, len);
 
-	ring_buf_put(&rx_ring_buf, buf, len);
-
-	fifo_item->len = len;
-	fifo_item->type = AT_CMD;
-
-	k_fifo_put(&driver_data.rx_fifo, fifo_item);
-	k_sem_give(&driver_data.sem_rx_wait);
+	k_sem_give(&st67_data->sem_rx_wait);
 }
 
 static void handle_sta_data_frame(const uint8_t *buf, size_t len)
@@ -581,15 +616,32 @@ static void handle_sta_data_frame(const uint8_t *buf, size_t len)
 
 static void handle_sap_data_frame(const uint8_t *buf, size_t len)
 {
+	LOG_ERR("SoftAP not yet supported ");
 }
 
 static int st67_send(const struct device *dev, struct net_pkt *pkt)
 {
+	int ret;
 	if (!pkt || !pkt->buffer) {
 		return -EINVAL;
 	}
 
-	return st67_spi_send_net_pkt(pkt);
+	struct st67_spi_pkt *spi_pkt = k_malloc(sizeof(struct st67_spi_pkt));
+	if (!spi_pkt) {
+		return -ENOMEM;
+	}
+	spi_pkt->net_pkt = pkt;
+	spi_pkt->type = STA_DATA; /* For now, the driver only supports STA. For SoftAP, the iface
+				     will be checked to determine the type. */
+	net_pkt_ref(pkt);
+	ret = st67_spi_send(spi_pkt);
+	if (ret < 0) {
+		net_pkt_unref(pkt);
+		k_free(spi_pkt);
+		return ret;
+	}
+
+	return 0;
 }
 
 static void st67_init_work(struct k_work *work)
@@ -600,16 +652,16 @@ static void st67_init_work(struct k_work *work)
 	static const struct setup_cmd cmds[] = {
 		SETUP_CMD("AT+CIPSTAMAC?\r\n", "+CIPSTAMAC:", on_cmd_cipstamac, 1U, ""),
 		SETUP_CMD_NOHANDLE(ST67W611M1_CWLAPOPT_CMD),
+		SETUP_CMD("AT+CWNETMODE?\r\n", "+CWNETMODE:", on_cmd_cwnetmode, 1U, ""),
 	};
 	ret = modem_cmd_handler_setup_cmds(
 		&st67_data->mctx.iface, &st67_data->mctx.cmd_handler, cmds, ARRAY_SIZE(cmds),
-		&st67_data->sem_cmd_response_wait, ST67W611M1_SCAN_TIMEOUT);
+		&st67_data->sem_cmd_response_wait, ST67W611M1_AT_CMD_TIMEOUT);
 	if (ret < 0) {
 		goto err;
 	}
 
 	k_sem_give(&st67_data->sem_st67_init_over);
-
 	return;
 
 err:
@@ -637,10 +689,8 @@ static int st67_init(const struct device *dev)
 	k_sem_init(&st67_data->sem_wifi_scan_done_wait, 0, 1);
 	k_sem_init(&st67_data->sem_rx_wait, 0, 1);
 
-	k_fifo_init(&st67_data->rx_fifo);
-
-	/* Implemented with work items just like esp_at driver to return the API calls
-	 * quickly and not wait for semaphore (modem_cmd_send()) */
+	/* Implemented with work items to return the API calls quickly and not wait for semaphore
+	 * (modem_cmd_send()) */
 	k_work_init(&st67_data->init_work, st67_init_work);
 	k_work_init(&st67_data->scan_work, st67_scan_work);
 	k_work_init(&st67_data->connect_work, st67_connect_work);
@@ -655,7 +705,7 @@ static int st67_init(const struct device *dev)
 	const struct modem_cmd_handler_config cmd_handler_config = {
 		.match_buf = &st67_data->cmd_match_buf[0],
 		.match_buf_len = sizeof(st67_data->cmd_match_buf),
-		.buf_pool = &mdm_recv_pool,
+		.buf_pool = &at_cmd_net_buf_pool,
 		.alloc_timeout = K_NO_WAIT,
 		.eol = NULL, /* \r\n is handled in the commands directly for SPI efficiency. */
 		.user_data = NULL,
@@ -677,21 +727,26 @@ static int st67_init(const struct device *dev)
 		goto out;
 	}
 
-	/* cmd handler cb register */
-	/* Done this way because cmd handler was designed mainly for UART */
-	/* TODO might be implemented in something like drivers/modem/modem_iface_spi.c */
+	/* cmd handler cb register
+	 * Done this way because cmd handler was designed mainly for UART.
+	 * Refer to drivers/modem/modem_iface_uart.h */
 	st67_data->mctx.iface.read = st67_receive_at_cmd_from_bus;
 	st67_data->mctx.iface.write = st67_send_at_cmd_to_bus;
 
-	/* RX thread */
-	k_thread_create(&st67_rx_thread, st67_rx_stack, K_KERNEL_STACK_SIZEOF(st67_rx_stack),
-			st67_rx, st67_data, NULL, NULL,
+	/* AT RX thread */
+	k_thread_create(&st67_at_rx_thread, st67_at_rx_stack,
+			K_KERNEL_STACK_SIZEOF(st67_at_rx_stack), st67_at_rx, st67_data, NULL, NULL,
 			K_PRIO_COOP(CONFIG_ST67W611M1_RX_THREAD_PRIORITY), 0, K_NO_WAIT);
-	k_thread_name_set(&st67_rx_thread, "st67_rx_thread");
+	k_thread_name_set(&st67_at_rx_thread, "st67_at_rx_thread");
 
 	ret = k_sem_take(&st67_data->sem_st67_init_over, ST67W611M1_INIT_TIMEOUT);
 	if (ret < 0) {
 		LOG_ERR("Did not receive ST67 init over signal");
+		goto out;
+	}
+
+	if (!st67_data->is_supported_st67_firmware_detected) {
+		ret = -ENODEV;
 		goto out;
 	}
 
@@ -716,7 +771,7 @@ static void st67_iface_init(struct net_if *iface)
 	}
 
 	ethernet_init(iface);
-	net_if_dormant_on(iface); /* Wifi network association not yet done */
+	net_if_dormant_on(iface); /* Wifi network association not yet done. */
 }
 
 static const struct wifi_mgmt_ops st67_mgmt_ops = {

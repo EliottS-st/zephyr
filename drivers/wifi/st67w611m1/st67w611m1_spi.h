@@ -35,16 +35,14 @@ enum st67_spi_frame_type {
 
 BUILD_ASSERT(sizeof(struct spi_header) == 8, "spi_header struct should be 8 bytes long!");
 
-struct fifo_item {
-	void *fifo_reserved;
-	size_t len;
+struct st67_spi_pkt {
+	struct net_pkt *net_pkt;
 	enum st67_spi_frame_type type;
 };
 
 typedef void (*drv_rx_iface_cb_t)(const uint8_t *buf, size_t len);
 
-int st67_spi_send_bytes(const uint8_t *buf, size_t len);
-int st67_spi_send_net_pkt(struct net_pkt *pkt);
+int st67_spi_send(struct st67_spi_pkt *pkt);
 
 int st67_spi_init(void);
 

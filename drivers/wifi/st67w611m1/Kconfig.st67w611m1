@@ -48,13 +48,25 @@ config ST67W611M1_SPI_PROCESSOR_THREAD_STACK_SIZE
 	int "Stack size of the SPI TX RX transfer thread"
 	default 1024
 
-config ST67W611M1_TX_BUF_COUNT
-	int "Number of max len SPI frames that can fit in the TX message queue"
-	default 4
+config ST67W611M1_TX_AT_CMD_NET_BUF_POOL_COUNT
+	int "Number of buffers in the AT command net buf pool"
+	default 12
 
-config ST67W611M1_RX_BUF_COUNT
-	int "Number of max len AT cmds that can fit in the RX message queue"
-	default 4
+config ST67W611M1_TX_AT_CMD_NET_BUF_POOL_SIZE
+	int "Size of buffers in the AT command net buf pool"
+	default 256
+
+config ST67W611M1_TX_AT_CMD_NET_PKT_SLAB_COUNT
+	int "Number of AT command net_pkt that can be allocated at the same time"
+	default 10
+
+config ST67W611M1_RX_AT_CMD_RING_BUF_SIZE
+	int "Size of the RX AT command ring buffer"
+	default 768
+
+config HEAP_MEM_POOL_ADD_SIZE_ST67W611M1_SPI_PKT_FIFO
+	int "Minimum system heap space for spi_pkt struct and fifo put allocs"
+	default 768
 
 config NET_MGMT_EVENT_STACK_SIZE
 	default 2048
